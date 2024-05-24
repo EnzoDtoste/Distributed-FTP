@@ -10,6 +10,34 @@ def setup_control_socket(host='0.0.0.0', port=21):
     print(f"Listening on {host}:{port}")
     return server_socket
 
+def handle_pasv_command(client_socket):
+    data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # Asignar cualquier puerto libre del sistema
+    data_socket.bind(('', 0))
+    data_socket.listen(1)
+    port = data_socket.getsockname()[1]
+    
+    # Informar al cliente sobre el puerto donde debe conectarse
+    ip = client_socket.getsockname()[0].replace('.', ',')
+    p1, p2 = divmod(port, 256)  # Calcular los bytes del puerto
+    response = f"227 Entering Passive Mode ({ip},{p1},{p2}).\r\n"
+    client_socket.send(response.encode('utf-8'))
+    
+    # Aceptar la conexión de datos del cliente
+    data_client, addr = data_socket.accept()
+    return data_client
+
+def handle_port_command(command, client_socket):
+    parts = command.split()  # Divide el comando completo en partes
+    address_parts = parts[1].split(',')  # Toma la segunda parte y divide por comas
+    ip_address = '.'.join(address_parts[:4])  # Reconstituye la dirección IP
+    port = int(address_parts[4]) * 256 + int(address_parts[5])  # Calcula el puerto
+
+    # Crear un socket de datos para conectarse al cliente
+    data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    data_socket.connect((ip_address, port))
+    return data_socket
+
 def handle_client(client_socket):
     current_dir = "/"  # Working directory
     data_socket = None
@@ -42,6 +70,13 @@ def handle_client(client_socket):
             elif command.startswith('OPTS UTF8 ON'):
                 # Set UTF8
                 client_socket.send(b'200 UTF8 set to on\r\n')
+            
+            elif command.startswith('PORT'):
+                data_socket = handle_port_command(command, client_socket)
+                client_socket.send(b'200 PORT command successful.\r\n')
+            
+            elif command.startswith('PASV'):
+                data_socket = handle_pasv_command(client_socket)
             
             else:
                 client_socket.send(b'500 Syntax error, command unrecognized.\r\n')
