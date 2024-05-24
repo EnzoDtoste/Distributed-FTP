@@ -38,6 +38,20 @@ def handle_port_command(command, client_socket):
     data_socket.connect((ip_address, port))
     return data_socket
 
+def send_directory_listing_nlst(client_socket, data_socket, path):
+    try:
+        listing = '\n'.join(os.listdir(path))
+        if len(listing) > 0:
+            listing += '\n'
+
+        client_socket.send(b"150 Here comes the directory listing.\r\n")
+        data_socket.sendall(listing.encode('utf-8'))
+        data_socket.close()
+        client_socket.send(b"226 Directory send OK.\r\n")
+    except Exception as e:
+        print(f"Error: {e}")
+        client_socket.send(b"550 Failed to list directory.\r\n")
+
 def handle_client(client_socket):
     current_dir = "/"  # Working directory
     data_socket = None
@@ -77,6 +91,13 @@ def handle_client(client_socket):
             
             elif command.startswith('PASV'):
                 data_socket = handle_pasv_command(client_socket)
+
+            elif command.startswith('NLST'):
+                if data_socket:
+                    args = command.split()
+                    send_directory_listing_nlst(client_socket, data_socket, current_dir if len(args) == 1 else args[1])
+                    data_socket.close()
+                    data_socket = None  # Reset data_socket after use
             
             else:
                 client_socket.send(b'500 Syntax error, command unrecognized.\r\n')
