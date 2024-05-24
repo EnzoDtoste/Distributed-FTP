@@ -59,18 +59,24 @@ def send_directory_listing(client_socket, data_socket, path):
         
         listing = []
         for entry in entries:
-            filepath = os.path.join(path, entry)
-            stats = os.stat(filepath)
-            file_info = {
-                'permissions': 'drwxr-xr-x' if os.path.isdir(filepath) else '-rw-r--r--',
-                'links': stats.st_nlink,
-                'owner': stats.st_uid,
-                'group': stats.st_gid,
-                'size': stats.st_size,
-                'mtime': time.strftime("%b %d %H:%M", time.gmtime(stats.st_mtime)),
-                'name': entry
-            }
-            listing.append("{permissions} {links} {owner} {group} {size} {mtime} {name}".format(**file_info))
+            try:
+                filepath = os.path.join(path, entry)
+                stats = os.stat(filepath)
+                file_info = {
+                    'permissions': 'drwxr-xr-x' if os.path.isdir(filepath) else '-rw-r--r--',
+                    'links': stats.st_nlink,
+                    'owner': stats.st_uid,
+                    'group': stats.st_gid,
+                    'size': stats.st_size,
+                    'mtime': time.strftime("%b %d %H:%M", time.gmtime(stats.st_mtime)),
+                    'name': entry
+                }
+                
+                listing.append("{permissions} {links} {owner} {group} {size} {mtime} {name}".format(**file_info))
+            
+            except:
+                print("Could not read: " + str(entry))
+
         data_socket.sendall('\n'.join(listing).encode('utf-8'))
         data_socket.close()
         client_socket.send(b"226 Directory send OK.\r\n")
