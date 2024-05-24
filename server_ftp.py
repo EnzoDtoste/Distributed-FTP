@@ -78,6 +78,24 @@ def send_directory_listing(client_socket, data_socket, path):
         print(f"Error: {e}")
         client_socket.send(b"550 Failed to list directory.\r\n")
 
+def handle_retr_command(filename, client_socket, data_socket, current_dir):
+    file_path = os.path.join(current_dir, filename)
+    if os.path.exists(file_path) and os.path.isfile(file_path):
+        try:
+            client_socket.send(b"150 Opening binary mode data connection.\r\n")
+            with open(file_path, "rb") as file: # binary mode
+                data = file.read(4096)
+                while data:
+                    data_socket.sendall(data)
+                    data = file.read(4096)
+            data_socket.close()
+            client_socket.send(b"226 Transfer complete.\r\n")
+        except Exception as e:
+            print(f"Error: {e}")
+            client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
+    else:
+        client_socket.send(b"550 File not found.\r\n")
+
 def handle_client(client_socket):
     current_dir = "/"  # Working directory
     data_socket = None
@@ -143,6 +161,10 @@ def handle_client(client_socket):
                     client_socket.send(b'250 Directory successfully changed.\r\n')
                 else:
                     client_socket.send(b'550 Failed to change directory.\r\n')
+
+            elif command.startswith('RETR'):
+                filename = command[5:].strip()
+                handle_retr_command(filename, client_socket, data_socket, current_dir)
 
             else:
                 client_socket.send(b'500 Syntax error, command unrecognized.\r\n')
