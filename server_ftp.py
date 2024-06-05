@@ -86,21 +86,40 @@ def send_directory_listing(client_socket, data_socket, path):
 
 def handle_retr_command(filename, client_socket, data_socket, current_dir):
     file_path = os.path.join(current_dir, filename)
-    if os.path.exists(file_path) and os.path.isfile(file_path):
-        try:
+    
+    try:
+        node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        node_socket.connect(('127.0.0.1', 50))
+        node_socket.sendall(f"RETR {file_path}".encode())
+
+        response = node_socket.recv(1024).decode().strip()
+
+        if response.startswith("220"):
+            size = int(response[4:].strip())
+
             client_socket.send(b"150 Opening binary mode data connection.\r\n")
-            with open(file_path, "rb") as file: # binary mode
-                data = file.read(4096)
-                while data:
-                    data_socket.sendall(data)
-                    data = file.read(4096)
+
+            count = 0
+            node_socket.send(b"220 Ok")
+
+            while count < size:
+                data = node_socket.recv(4096)
+                data_socket.sendall(data)
+                count += len(data)
+                #print(f"{count} / {size}")
+
+            node_socket.close()
             data_socket.close()
             client_socket.send(b"226 Transfer complete.\r\n")
-        except Exception as e:
-            print(f"Error: {e}")
-            client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
-    else:
-        client_socket.send(b"550 File not found.\r\n")
+            print("Transfer complete")
+
+        else:
+            client_socket.send(response.encode())
+
+    except Exception as e:
+        print(f"Error: {e}")
+        client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
+
 
 def handle_client(client_socket):
     current_dir = "/"  # Working directory
