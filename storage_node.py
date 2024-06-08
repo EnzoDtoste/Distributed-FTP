@@ -1,6 +1,12 @@
 import threading
 import socket
 import os
+import hashlib
+
+def hash_function(key):
+    """ Retorna un hash entero de 160 bits del input key """
+    return int(hashlib.sha1(key.encode('utf-8')).hexdigest(), 16)
+
 
 def setup_control_socket(host='0.0.0.0', port=50):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -9,8 +15,22 @@ def setup_control_socket(host='0.0.0.0', port=50):
     print(f"Listening on {host}:{port}")
     return server_socket
 
-def handle_retr_command(path, client_socket):
-    if os.path.exists(path) and os.path.isfile(path):
+def getId(host, port):
+    return host + ':' + str(port)
+
+class StorageNode:
+    def __init__(self, host='0.0.0.0', port=50):
+        self.identifier = hash_function(getId(host, port))
+        self.socket = setup_control_socket(host, port)
+        self.data = {}
+        self.finger_table = []
+        self.predecessor = None
+        self.successor = None
+
+def handle_retr_command(storageNode : StorageNode, key, client_socket):
+    if key in storageNode.data:
+        path = storageNode.data[key]
+
         try:
             with open(path, "rb") as file: # binary mode
                 size = os.stat(path).st_size
@@ -32,34 +52,42 @@ def handle_retr_command(path, client_socket):
                         print("Transfer complete")
         except Exception as e:
             print(f"Error: {e}")
-            #client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
-    else:
-        client_socket.send(b"550 File not found.\r\n")
 
-def handle_client(client_socket):
+    else:
+        id_key = hash_function(key)
+
+        if storageNode.identifier < id_key and storageNode.successor:
+            client_socket.send(f"550 {storageNode.successor[0]}:{storageNode.successor[1]}".encode())
+        elif storageNode.identifier > id_key and storageNode.predecessor:
+            client_socket.send(f"550 {storageNode.predecessor[0]}:{storageNode.predecessor[1]}".encode())
+
+def handle_client(storageNode, client_socket):
     try:
         command = client_socket.recv(1024).decode().strip()
         print(f"Received command: {command}")
 
         if command.startswith('RETR'):
-            path = command[5:].strip()
-            handle_retr_command(path, client_socket)
+            key = command[5:].strip()
+            handle_retr_command(storageNode, key, client_socket)
 
     except ConnectionResetError:
         print("Connection reset by peer")
     finally:
         client_socket.close()
 
-def accept_connections(server_socket):
+def accept_connections(storageNode):
     while True:
-        client_socket, addr = server_socket.accept()
+        client_socket, addr = storageNode.socket.accept()
         print(f"Accepted connection from {addr}")
-        client_thread = threading.Thread(target=handle_client, args=(client_socket,))
-        client_thread.start()
+        client_thread = threading.Thread(target=handle_client, args=(storageNode, client_socket,))
+        client_thread.start()    
+
+def accept_connections_async(storageNode):
+    thread = threading.Thread(target=accept_connections, args=(storageNode,))
+    thread.start()    
 
 def main():
-    server_socket = setup_control_socket()
-    accept_connections(server_socket)
+    accept_connections(StorageNode())
 
 if __name__ == "__main__":
     main()

@@ -84,12 +84,15 @@ def send_directory_listing(client_socket, data_socket, path):
         print(f"Error: {e}")
         client_socket.send(b"550 Failed to list directory.\r\n")
 
-def handle_retr_command(filename, client_socket, data_socket, current_dir):
+def handle_retr_command(filename, client_socket, data_socket, current_dir, node_ip='127.0.0.1', node_port=50):
     file_path = os.path.join(current_dir, filename)
     
     try:
         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        node_socket.connect(('127.0.0.1', 50))
+        node_socket.connect((node_ip, node_port))
+        
+        print(f"Connected to {node_ip}:{node_port}")
+        
         node_socket.sendall(f"RETR {file_path}".encode())
 
         response = node_socket.recv(1024).decode().strip()
@@ -113,8 +116,11 @@ def handle_retr_command(filename, client_socket, data_socket, current_dir):
             client_socket.send(b"226 Transfer complete.\r\n")
             print("Transfer complete")
 
-        else:
-            client_socket.send(response.encode())
+        elif response.startswith("550"):
+            ip, port = response.split(" ")[1].split(":")
+            node_socket.close()
+            handle_retr_command(filename, client_socket, data_socket, current_dir, ip, int(port))
+            return
 
     except Exception as e:
         print(f"Error: {e}")
@@ -193,6 +199,8 @@ def handle_client(client_socket):
 
             else:
                 client_socket.send(b'500 Syntax error, command unrecognized.\r\n')
+    except ConnectionAbortedError:
+        print("Connection aborted by peer")
     except ConnectionResetError:
         print("Connection reset by peer")
     finally:
