@@ -23,9 +23,28 @@ class StorageNode:
         self.identifier = hash_function(getId(host, port))
         self.socket = setup_control_socket(host, port)
         self.data = {}
-        self.finger_table = []
-        self.predecessor = None
-        self.successor = None
+        self.finger_table_bigger = []
+        self.finger_table_smaller = []
+
+def get_successor(finger_table, id):
+    for i in range(len(finger_table)):
+        if finger_table[i][0] > id:
+            index = max(i - 1, 0)
+            return (finger_table[index][1], finger_table[index][2])
+
+    index = len(finger_table) - 1
+    return (finger_table[index][1], finger_table[index][2])
+
+def find_successor(storageNode : StorageNode, id):
+    if id > storageNode.identifier:
+        return get_successor(storageNode.finger_table_bigger, id)
+    
+    elif len(storageNode.finger_table_smaller) > 0:
+        return get_successor(storageNode.finger_table_smaller, id)
+    
+    else:
+        index = len(storageNode.finger_table_bigger) - 1
+        return (storageNode.finger_table_bigger[index][1], storageNode.finger_table_bigger[index][2])
 
 def handle_retr_command(storageNode : StorageNode, key, client_socket):
     if key in storageNode.data:
@@ -55,11 +74,10 @@ def handle_retr_command(storageNode : StorageNode, key, client_socket):
 
     else:
         id_key = hash_function(key)
+        ip, port = find_successor(storageNode, id_key)
+        
+        client_socket.send(f"550 {ip}:{port}".encode())
 
-        if storageNode.identifier < id_key and storageNode.successor:
-            client_socket.send(f"550 {storageNode.successor[0]}:{storageNode.successor[1]}".encode())
-        elif storageNode.identifier > id_key and storageNode.predecessor:
-            client_socket.send(f"550 {storageNode.predecessor[0]}:{storageNode.predecessor[1]}".encode())
 
 def handle_client(storageNode, client_socket):
     try:

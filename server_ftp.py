@@ -128,7 +128,7 @@ def handle_retr_command(filename, client_socket, data_socket, current_dir, node_
 
 
 def handle_client(client_socket):
-    current_dir = "/"  # Working directory
+    current_dir = "/[Cine Clasico] Red Planet (2000) DUAL"  # Working directory
     data_socket = None
 
     try:
