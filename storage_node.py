@@ -25,6 +25,7 @@ class StorageNode:
         self.data = {}
         self.finger_table_bigger = []
         self.finger_table_smaller = []
+        self.predecessor_id = None
 
 def get_successor(finger_table, id):
     for i in range(len(finger_table)):
@@ -47,19 +48,22 @@ def find_successor(storageNode : StorageNode, id):
         return (storageNode.finger_table_bigger[index][1], storageNode.finger_table_bigger[index][2])
 
 def handle_retr_command(storageNode : StorageNode, key, client_socket):
-    if key in storageNode.data:
-        path = storageNode.data[key]
+    id_key = hash_function(key)
+    
+    if (storageNode.predecessor_id > storageNode.identifier or storageNode.predecessor_id < id_key) and id_key <= storageNode.identifier:
+        if key in storageNode.data:
+            path = storageNode.data[key]
 
-        try:
-            with open(path, "rb") as file: # binary mode
-                size = os.stat(path).st_size
-                print(f"File size: {size} bytes")
+            try:
+                with open(path, "rb") as file: # binary mode
+                    size = os.stat(path).st_size
+                    print(f"File size: {size} bytes")
 
-                client_socket.send(f"220 {size}".encode())
+                    client_socket.send(f"220 {size}".encode())
 
-                response = client_socket.recv(1024).decode().strip()
+                    response = client_socket.recv(1024).decode().strip()
 
-                if response.startswith("220"):
+                    if response.startswith("220"):
                         data = file.read(4096)
                         count = 0
                         while data:
@@ -69,11 +73,63 @@ def handle_retr_command(storageNode : StorageNode, key, client_socket):
                             data = file.read(4096)
 
                         print("Transfer complete")
+            except Exception as e:
+                print(f"Error: {e}")
+        else:
+            client_socket.send(f"404 Not Found".encode())
+    else:
+        ip, port = find_successor(storageNode, id_key)
+        
+        client_socket.send(f"550 {ip}:{port}".encode())
+
+
+def handle_stor_command(storageNode : StorageNode, key, client_socket):
+    id_key = hash_function(key)
+
+    if (storageNode.predecessor_id > storageNode.identifier or storageNode.predecessor_id < id_key) and id_key <= storageNode.identifier:
+        try:
+            with open(key, "wb") as file: # binary mode
+                client_socket.send(f"220".encode())
+
+                response = client_socket.recv(1024).decode().strip()
+
+                if response.startswith("220"):
+                    while True:
+                        data = client_socket.recv(4096)
+
+                        if not data:
+                            break
+
+                        file.write(data)
+                    
+                    storageNode.data[key] = key
+
         except Exception as e:
             print(f"Error: {e}")
 
     else:
-        id_key = hash_function(key)
+        ip, port = find_successor(storageNode, id_key)
+        
+        client_socket.send(f"550 {ip}:{port}".encode())
+
+
+def handle_dele_command(storageNode : StorageNode, key, client_socket):
+    id_key = hash_function(key)
+    
+    if (storageNode.predecessor_id > storageNode.identifier or storageNode.predecessor_id < id_key) and id_key <= storageNode.identifier:
+        if key in storageNode.data:
+            path = storageNode.data[key]
+
+            try:
+                client_socket.send(f"220".encode())
+                storageNode.data.pop(key)
+                os.remove(path)
+
+            except Exception as e:
+                print(f"Error: {e}")
+        else:
+            client_socket.send(f"404 Not Found".encode())
+    else:
         ip, port = find_successor(storageNode, id_key)
         
         client_socket.send(f"550 {ip}:{port}".encode())
@@ -87,6 +143,14 @@ def handle_client(storageNode, client_socket):
         if command.startswith('RETR'):
             key = command[5:].strip()
             handle_retr_command(storageNode, key, client_socket)
+
+        elif command.startswith('STOR'):
+            key = command[5:].strip()
+            handle_stor_command(storageNode, key, client_socket)
+
+        elif command.startswith('DELE'):
+            key = command[5:].strip()
+            handle_dele_command(storageNode, key, client_socket)
 
     except ConnectionResetError:
         print("Connection reset by peer")

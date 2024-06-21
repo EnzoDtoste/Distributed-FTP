@@ -112,7 +112,6 @@ def handle_retr_command(filename, client_socket, data_socket, current_dir, node_
                 #print(f"{count} / {size}")
 
             node_socket.close()
-            data_socket.close()
             client_socket.send(b"226 Transfer complete.\r\n")
             print("Transfer complete")
 
@@ -121,10 +120,97 @@ def handle_retr_command(filename, client_socket, data_socket, current_dir, node_
             node_socket.close()
             handle_retr_command(filename, client_socket, data_socket, current_dir, ip, int(port))
             return
+        
+        else:
+            client_socket.send(b"550 File not found.\r\n")
 
     except Exception as e:
         print(f"Error: {e}")
         client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
+
+
+def handle_stor_command(filename, client_socket, data_socket, current_dir, node_ip='127.0.0.1', node_port=50):
+    file_path = os.path.join(current_dir, filename)
+    
+    try:
+        node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        node_socket.connect((node_ip, node_port))
+        
+        print(f"Connected to {node_ip}:{node_port}")
+        
+        node_socket.sendall(f"STOR {file_path}".encode())
+
+        response = node_socket.recv(1024).decode().strip()
+
+        if response.startswith("220"):
+            client_socket.send(b"150 Opening binary mode data connection for file transfer.\r\n")
+            
+            node_socket.send(b"220 Ok")
+
+            while True:
+                data = data_socket.recv(4096)
+                node_socket.sendall(data)
+
+                if not data:
+                    break
+            
+            node_socket.close()
+            client_socket.send(b"226 Transfer complete.\r\n")
+    
+        elif response.startswith("550"):
+            ip, port = response.split(" ")[1].split(":")
+            node_socket.close()
+            handle_stor_command(filename, client_socket, data_socket, current_dir, ip, int(port))
+            return
+
+    except Exception as e:
+        print(f"Error: {e}")
+        client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
+
+def handle_dele_command(filename, client_socket, current_dir, node_ip='127.0.0.1', node_port=50):
+    file_path = os.path.join(current_dir, filename)
+    
+    try:
+        node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        node_socket.connect((node_ip, node_port))
+        
+        print(f"Connected to {node_ip}:{node_port}")
+        
+        node_socket.sendall(f"DELE {file_path}".encode())
+
+        response = node_socket.recv(1024).decode().strip()
+
+        if response.startswith("220"):
+            node_socket.close()
+            client_socket.send(b"250 File deleted successfully.\r\n")
+
+        elif response.startswith("550"):
+            ip, port = response.split(" ")[1].split(":")
+            node_socket.close()
+            handle_dele_command(filename, client_socket, current_dir, ip, int(port))
+            return
+        
+        else:
+            client_socket.send(b"550 File not found.\r\n")
+
+    except Exception as e:
+        print(f"Error: {e}")
+        client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
+
+def handle_mkd_command(dirname, client_socket, current_dir):
+    new_dir_path = os.path.join(current_dir, dirname)
+    
+    if not os.path.exists(new_dir_path):
+        try:
+            os.makedirs(new_dir_path)
+            client_socket.send(f'257 "{new_dir_path}" created.\r\n'.encode())
+        
+        except OSError as e:
+            print(f"Error: {e}")
+            client_socket.send(b"550 Create directory operation failed.\r\n")
+    
+    else:
+        client_socket.send(b"550 Directory already exists.\r\n")
 
 
 def handle_client(client_socket):
@@ -176,6 +262,9 @@ def handle_client(client_socket):
             
             elif command.startswith('TYPE I'):
                 client_socket.send(b'200 Type set to I.\r\n')
+            
+            elif command.startswith('TYPE A'):
+                client_socket.send(b'200 Type set to A.\r\n')
 
             elif command.startswith('LIST'):
                 if data_socket:
@@ -195,7 +284,25 @@ def handle_client(client_socket):
 
             elif command.startswith('RETR'):
                 filename = command[5:].strip()
-                handle_retr_command(filename, client_socket, data_socket, current_dir)
+                if data_socket:
+                    handle_retr_command(filename, client_socket, data_socket, current_dir)
+                    data_socket.close()
+                    data_socket = None
+
+            elif command.startswith('STOR'):
+                filename = command[5:].strip()
+                if data_socket:
+                    handle_stor_command(filename, client_socket, data_socket, current_dir)
+                    data_socket.close()
+                    data_socket = None
+
+            elif command.startswith('DELE'):
+                filename = command[5:].strip()
+                handle_dele_command(filename, client_socket, current_dir)
+
+            elif command.startswith('MKD'):
+                dirname = command[4:].strip()
+                handle_mkd_command(dirname, client_socket, current_dir)
 
             else:
                 client_socket.send(b'500 Syntax error, command unrecognized.\r\n')
