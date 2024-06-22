@@ -41,20 +41,20 @@ def main():
     inner_dirs = {}
     for entry in entries:
         try:
-            if entry != '..':
-                filepath = os.path.normpath(os.path.join(root_path, entry))
-                stats = os.stat(filepath)
-                file_info = {
-                    'permissions': 'drwxr-xr-x' if os.path.isdir(filepath) else '-rw-r--r--',
-                    'links': stats.st_nlink,
-                    'owner': stats.st_uid,
-                    'group': stats.st_gid,
-                    'size': stats.st_size,
-                    'mtime': time.strftime("%b %d %H:%M", time.gmtime(stats.st_mtime)),
-                    'name': entry
-                }
-                
-                inner_dirs[filepath] = "{permissions} {links} {owner} {group} {size} {mtime} {name}".format(**file_info)
+            filepath = os.path.normpath(os.path.join(root_path, entry))
+            stats = os.stat(filepath)
+            file_info = {
+                'permissions': 'drwxr-xr-x' if os.path.isdir(filepath) else '-rw-r--r--',
+                'links': stats.st_nlink,
+                'owner': stats.st_uid,
+                'group': stats.st_gid,
+                'size': stats.st_size,
+                'mtime': time.strftime("%b %d %H:%M", time.gmtime(stats.st_mtime)),
+                'name': entry
+            }
+            
+            inner_dirs[filepath] = "{permissions} {links} {owner} {group} {size} {mtime} {name}".format(**file_info)
+            print(inner_dirs[filepath])
         except:
             print("Could not read: " + str(entry))
 
@@ -95,6 +95,7 @@ def main():
                     }
                     
                     inner_dirs[filepath] = "{permissions} {links} {owner} {group} {size} {mtime} {name}".format(**file_info)
+                    print(inner_dirs[filepath])
                 except:
                     print("Could not read: " + str(entry))
 

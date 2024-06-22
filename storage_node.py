@@ -71,6 +71,65 @@ def handle_list_command(storageNode : StorageNode, key, client_socket):
         
         client_socket.send(f"550 {ip}:{port}".encode())
 
+def handle_mkd_command(storageNode : StorageNode, key, client_socket):
+    id_key = hash_function(key)
+    
+    if (storageNode.predecessor_id > storageNode.identifier and (id_key <= storageNode.identifier or id_key > storageNode.predecessor_id)) or (storageNode.predecessor_id < id_key and id_key <= storageNode.identifier):
+        if key not in storageNode.data:
+            storageNode.data[key] = {}
+
+            try:
+                client_socket.send(f"220".encode())
+
+            except Exception as e:
+                print(f"Error: {e}")
+        else:
+            client_socket.send(f"403 Already exists".encode())
+    else:
+        ip, port = find_successor(storageNode, id_key)
+        
+        client_socket.send(f"550 {ip}:{port}".encode())
+
+def handle_stor_dir_command(storageNode : StorageNode, folder, dirname, info, client_socket):
+    id_key = hash_function(folder)
+    
+    if (storageNode.predecessor_id > storageNode.identifier and (id_key <= storageNode.identifier or id_key > storageNode.predecessor_id)) or (storageNode.predecessor_id < id_key and id_key <= storageNode.identifier):
+        if folder in storageNode.data:
+            dirs = storageNode.data[folder]
+            dirs[dirname] = info
+
+            try:
+                client_socket.send(f"220".encode())
+                
+            except Exception as e:
+                print(f"Error: {e}")
+        else:
+            client_socket.send(f"404 Not Found".encode())
+    else:
+        ip, port = find_successor(storageNode, id_key)
+        
+        client_socket.send(f"550 {ip}:{port}".encode())
+
+def handle_dele_dir_command(storageNode : StorageNode, folder, dirname, client_socket):
+    id_key = hash_function(folder)
+    
+    if (storageNode.predecessor_id > storageNode.identifier and (id_key <= storageNode.identifier or id_key > storageNode.predecessor_id)) or (storageNode.predecessor_id < id_key and id_key <= storageNode.identifier):
+        if folder in storageNode.data:
+            dirs = storageNode.data[folder]
+            dirs.pop(dirname)
+
+            try:
+                client_socket.send(f"220".encode())
+                
+            except Exception as e:
+                print(f"Error: {e}")
+        else:
+            client_socket.send(f"404 Not Found".encode())
+    else:
+        ip, port = find_successor(storageNode, id_key)
+        
+        client_socket.send(f"550 {ip}:{port}".encode())
+
 def handle_retr_command(storageNode : StorageNode, key, client_socket):
     id_key = hash_function(key)
     
@@ -167,6 +226,24 @@ def handle_client(storageNode, client_socket):
         if command.startswith('LIST'):
             key = command[5:].strip()
             handle_list_command(storageNode, key, client_socket)
+
+        if command.startswith('MKD'):
+            key = command[4:].strip()
+            handle_mkd_command(storageNode, key, client_socket)
+
+        if command.startswith('STORDIR'):
+            args = command[8:].strip().split(" ")
+            idx_dirname, idx_info = [int(idx) for idx in args[:2]]
+
+            args = " ".join(args[2:])
+            handle_stor_dir_command(storageNode, args[:idx_dirname - 1], args[idx_dirname : idx_info - 1], args[idx_info:], client_socket)
+
+        if command.startswith('DELEDIR'):
+            args = command[8:].strip().split(" ")
+            idx_dirname = int(args[0])
+
+            args = " ".join(args[1:])
+            handle_dele_dir_command(storageNode, args[:idx_dirname - 1], args[idx_dirname:], client_socket)
 
         elif command.startswith('RETR'):
             key = command[5:].strip()

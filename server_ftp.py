@@ -1,6 +1,7 @@
 import socket
 import threading
 import os
+from datetime import datetime
 
 def setup_control_socket(host='0.0.0.0', port=21):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -36,20 +37,6 @@ def handle_port_command(command, client_socket):
     data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     data_socket.connect((ip_address, port))
     return data_socket
-
-def send_directory_listing_nlst(client_socket, data_socket, path):
-    try:
-        listing = '\n'.join(os.listdir(path))
-        if len(listing) > 0:
-            listing += '\n'
-
-        client_socket.send(b"150 Here comes the directory listing.\r\n")
-        data_socket.sendall(listing.encode('utf-8'))
-        data_socket.close()
-        client_socket.send(b"226 Directory send OK.\r\n")
-    except Exception as e:
-        print(f"Error: {e}")
-        client_socket.send(b"550 Failed to list directory.\r\n")
 
 def send_directory_listing(client_socket, data_socket, current_dir, node_ip='127.0.0.1', node_port=50):
     try:
@@ -96,6 +83,98 @@ def send_directory_listing(client_socket, data_socket, current_dir, node_ip='127
         print(f"Error: {e}")
         client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
+
+def send_stor_dir_command(dirname, info, current_dir, node_ip='127.0.0.1', node_port=50):
+    dir_path = os.path.normpath(os.path.join(current_dir, dirname))
+
+    try:
+        node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        node_socket.connect((node_ip, node_port))
+        
+        print(f"Connected to {node_ip}:{node_port}")
+        
+        node_socket.sendall(f"STORDIR {len(current_dir) + 1} {len(current_dir) + 1 + len(dir_path) + 1} {current_dir} {dir_path} {info}".encode())
+
+        response = node_socket.recv(1024).decode().strip()
+
+        if response.startswith("220"):
+            node_socket.close()
+            return True
+
+        elif response.startswith("550"):
+            ip, port = response.split(" ")[1].split(":")
+            node_socket.close()
+            return send_stor_dir_command(dirname, info, current_dir, ip, int(port))
+        
+        else:
+            return False
+
+    except Exception as e:
+        print(f"Error: {e}")
+        return False
+    
+def send_dele_dir_command(dirname, current_dir, node_ip='127.0.0.1', node_port=50):
+    dir_path = os.path.normpath(os.path.join(current_dir, dirname))
+
+    try:
+        node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        node_socket.connect((node_ip, node_port))
+        
+        print(f"Connected to {node_ip}:{node_port}")
+        
+        node_socket.sendall(f"STORDIR {len(current_dir) + 1} {len(current_dir) + 1 + len(dir_path) + 1} {current_dir} {dir_path}".encode())
+
+        response = node_socket.recv(1024).decode().strip()
+
+        if response.startswith("220"):
+            node_socket.close()
+            return True
+
+        elif response.startswith("550"):
+            ip, port = response.split(" ")[1].split(":")
+            node_socket.close()
+            return send_dele_dir_command(dirname, current_dir, ip, int(port))
+        
+        else:
+            return False
+
+    except Exception as e:
+        print(f"Error: {e}")
+        return False
+
+def handle_mkd_command(dirname, client_socket, current_dir, node_ip='127.0.0.1', node_port=50):
+    new_dir_path = os.path.normpath(os.path.join(current_dir, dirname))
+
+    try:
+        node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        node_socket.connect((node_ip, node_port))
+        
+        print(f"Connected to {node_ip}:{node_port}")
+        
+        node_socket.sendall(f"MKD {new_dir_path}".encode())
+
+        response = node_socket.recv(1024).decode().strip()
+
+        if response.startswith("220"):
+            node_socket.close()
+
+            if send_stor_dir_command(dirname, f"drwxr-xr-x 1 0 0 0 {datetime.now().strftime("%b %d %H:%M")} {os.path.basename(dirname)}", current_dir):
+                client_socket.send(f'257 "{new_dir_path}" created.\r\n'.encode())
+            else:
+                client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
+
+        elif response.startswith("550"):
+            ip, port = response.split(" ")[1].split(":")
+            node_socket.close()
+            handle_mkd_command(dirname, client_socket, current_dir, ip, int(port))
+            return
+        
+        else:
+            client_socket.send(b"550 Directory already exists.\r\n")
+
+    except Exception as e:
+        print(f"Error: {e}")
+        client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
 def handle_retr_command(filename, client_socket, data_socket, current_dir, node_ip='127.0.0.1', node_port=50):
     file_path = os.path.join(current_dir, filename)
@@ -160,16 +239,23 @@ def handle_stor_command(filename, client_socket, data_socket, current_dir, node_
             
             node_socket.send(b"220 Ok")
 
+            count = 0
             while True:
                 data = data_socket.recv(4096)
                 node_socket.sendall(data)
 
                 if not data:
                     break
+
+                count += len(data)
             
             node_socket.close()
-            client_socket.send(b"226 Transfer complete.\r\n")
-    
+
+            if send_stor_dir_command(filename, f"-rw-r--r-- 1 0 0 {count} {datetime.now().strftime("%b %d %H:%M")} {os.path.basename(filename)}", current_dir):
+                client_socket.send(b"226 Transfer complete.\r\n")
+            else:
+                client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
+
         elif response.startswith("550"):
             ip, port = response.split(" ")[1].split(":")
             node_socket.close()
@@ -195,7 +281,11 @@ def handle_dele_command(filename, client_socket, current_dir, node_ip='127.0.0.1
 
         if response.startswith("220"):
             node_socket.close()
-            client_socket.send(b"250 File deleted successfully.\r\n")
+
+            if send_dele_dir_command(filename, current_dir):
+                client_socket.send(b"250 File deleted successfully.\r\n")
+            else:
+                client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
         elif response.startswith("550"):
             ip, port = response.split(" ")[1].split(":")
@@ -209,21 +299,6 @@ def handle_dele_command(filename, client_socket, current_dir, node_ip='127.0.0.1
     except Exception as e:
         print(f"Error: {e}")
         client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
-
-def handle_mkd_command(dirname, client_socket, current_dir):
-    new_dir_path = os.path.join(current_dir, dirname)
-    
-    if not os.path.exists(new_dir_path):
-        try:
-            os.makedirs(new_dir_path)
-            client_socket.send(f'257 "{new_dir_path}" created.\r\n'.encode())
-        
-        except OSError as e:
-            print(f"Error: {e}")
-            client_socket.send(b"550 Create directory operation failed.\r\n")
-    
-    else:
-        client_socket.send(b"550 Directory already exists.\r\n")
 
 
 def handle_client(client_socket):
@@ -269,7 +344,7 @@ def handle_client(client_socket):
             elif command.startswith('NLST'):
                 if data_socket:
                     args = command.split()
-                    send_directory_listing_nlst(client_socket, data_socket, current_dir if len(args) == 1 else args[1])
+                    send_directory_listing(client_socket, data_socket, current_dir if len(args) == 1 else os.path.normpath(args[1]))
                     data_socket.close()
                     data_socket = None  # Reset data_socket after use
             
@@ -287,12 +362,8 @@ def handle_client(client_socket):
 
             elif command.startswith('CWD'):
                 new_path = os.path.normpath(command[4:].strip())
-
-                if new_path != '..':
-                    current_dir = new_path
-                    client_socket.send(b'250 Directory successfully changed.\r\n')
-                else:
-                    client_socket.send(b'550 Failed to change directory.\r\n')
+                current_dir = os.path.normpath(os.path.join(current_dir, new_path))
+                client_socket.send(b'250 Directory successfully changed.\r\n')
 
             elif command.startswith('RETR'):
                 filename = command[5:].strip()
