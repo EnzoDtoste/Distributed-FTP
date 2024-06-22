@@ -19,9 +19,11 @@ def getId(host, port):
     return host + ':' + str(port)
 
 class StorageNode:
-    def __init__(self, host='0.0.0.0', port=50):
+    def __init__(self, host='0.0.0.0', port=50, setup_socket=True):
+        self.host = host
+        self.port = port
         self.identifier = hash_function(getId(host, port))
-        self.socket = setup_control_socket(host, port)
+        self.socket = setup_control_socket(host, port) if setup_socket else None
         self.data = {}
         self.finger_table_bigger = []
         self.finger_table_smaller = []
@@ -46,6 +48,26 @@ def find_successor(storageNode : StorageNode, id):
     else:
         index = len(storageNode.finger_table_bigger) - 1
         return (storageNode.finger_table_bigger[index][1], storageNode.finger_table_bigger[index][2])
+
+
+def get_k_successors(node : StorageNode, k):
+    result = []
+
+    for _, ip, port in node.finger_table_bigger:
+        if k > 0:
+            result.append(f"{ip}:{port}") 
+            k -= 1
+        else:
+            break
+
+    for _, ip, port in node.finger_table_smaller:
+        if k > 0:
+            result.append(f"{ip}:{port}") 
+            k -= 1
+        else:
+            break
+
+    return result
 
 def handle_list_command(storageNode : StorageNode, key, client_socket):
     id_key = hash_function(key)
@@ -152,10 +174,10 @@ def handle_dele_dir_command(storageNode : StorageNode, folder, dirname, client_s
         
         client_socket.send(f"550 {ip}:{port}".encode())
 
-def handle_retr_command(storageNode : StorageNode, key, client_socket):
+def handle_retr_command(storageNode : StorageNode, key, idx, client_socket):
     id_key = hash_function(key)
     
-    if (storageNode.predecessor_id > storageNode.identifier and (id_key <= storageNode.identifier or id_key > storageNode.predecessor_id)) or (storageNode.predecessor_id < id_key and id_key <= storageNode.identifier):
+    if key in storageNode.data or ((storageNode.predecessor_id > storageNode.identifier and (id_key <= storageNode.identifier or id_key > storageNode.predecessor_id)) or (storageNode.predecessor_id < id_key and id_key <= storageNode.identifier)):
         if key in storageNode.data:
             path = storageNode.data[key]
 
@@ -164,11 +186,12 @@ def handle_retr_command(storageNode : StorageNode, key, client_socket):
                     size = os.stat(path).st_size
                     print(f"File size: {size} bytes")
 
-                    client_socket.send(f"220 {size}".encode())
+                    client_socket.send(f"220 {size} {" ".join(get_k_successors(storageNode, 3))}".encode())
 
                     response = client_socket.recv(1024).decode().strip()
 
                     if response.startswith("220"):
+                        file.seek(idx)
                         data = file.read(4096)
                         count = 0
                         while data:
@@ -270,8 +293,12 @@ def handle_client(storageNode, client_socket):
             handle_dele_dir_command(storageNode, args[:idx_dirname - 1], args[idx_dirname:], client_socket)
 
         elif command.startswith('RETR'):
-            key = command[5:].strip()
-            handle_retr_command(storageNode, key, client_socket)
+            args = command[5:].strip().split(" ")
+            
+            idx = int(args[0])
+            key = " ".join(args[1:])
+
+            handle_retr_command(storageNode, key, idx, client_socket)
 
         elif command.startswith('STOR'):
             key = command[5:].strip()

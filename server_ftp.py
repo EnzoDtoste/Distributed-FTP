@@ -235,12 +235,16 @@ def handle_retr_command(filename, client_socket, data_socket, current_dir, node_
         
         print(f"Connected to {node_ip}:{node_port}")
         
-        node_socket.sendall(f"RETR {file_path}".encode())
+        node_socket.sendall(f"RETR 0 {file_path}".encode())
 
         response = node_socket.recv(1024).decode().strip()
 
         if response.startswith("220"):
-            size = int(response[4:].strip())
+            args = response[4:].strip().split(" ")
+
+            size = int(args[0])
+
+            aux_nodes = [(address.split(":")[0], int(address.split(":")[1])) for address in args[1:]] if len(args) > 1 else []
 
             client_socket.send(b"150 Opening binary mode data connection.\r\n")
 
@@ -248,7 +252,35 @@ def handle_retr_command(filename, client_socket, data_socket, current_dir, node_
             node_socket.send(b"220 Ok")
 
             while count < size:
-                data = node_socket.recv(4096)
+                try:
+                    data = node_socket.recv(4096)
+                except:
+                    while len(aux_nodes) > 0:
+                        node_socket.close()
+
+                        ip, port = aux_nodes.pop(0)
+
+                        node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        node_socket.connect((ip, port))
+
+                        print(f"Aux-connected to {ip}:{port}")
+        
+                        node_socket.sendall(f"RETR {count} {file_path}".encode())
+                        response = node_socket.recv(1024).decode().strip()
+
+                        if response.startswith("220"):
+                            args = response[4:].strip().split(" ")
+                            aux_nodes += [(address.split(":")[0], int(address.split(":")[1])) for address in args[1:]] if len(args) > 1 else []
+                            
+                            node_socket.send(b"220 Ok")
+                            break
+
+                        elif response.startswith("550"):
+                            ip, port = response.split(" ")[1].split(":")
+                            aux_nodes.append((ip, int(port)))
+
+                    continue
+
                 data_socket.sendall(data)
                 count += len(data)
                 #print(f"{count} / {size}")

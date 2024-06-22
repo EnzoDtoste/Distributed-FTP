@@ -1,9 +1,9 @@
-from storage_node import StorageNode, accept_connections_async, hash_function
+from storage_node import StorageNode, accept_connections_async, hash_function, setup_control_socket
 import os
 import time
 
 def main():
-    nodes = [StorageNode(port = i) for i in range(50, 200, 2)]
+    nodes = [StorageNode(port = i, setup_socket = False) for i in range(50, 200, 2)]
     nodes.sort(key = lambda sn: sn.identifier)
 
     def get_closest_up(id):
@@ -137,11 +137,10 @@ def main():
 
     ##########   Accept Connections  ###########
 
-    for node in nodes:
-        if node.port != 142:
-            accept_connections_async(node)
-        else:
-            node.socket.close()
+    node = get_closest_up(hash_function("0.0.0.0:142"))
+
+    node.socket = setup_control_socket(port = 142)
+    accept_connections_async(node)
     
     while True:
         input()
