@@ -122,7 +122,7 @@ def send_dele_dir_command(dirname, current_dir, node_ip='127.0.0.1', node_port=5
         
         print(f"Connected to {node_ip}:{node_port}")
         
-        node_socket.sendall(f"STORDIR {len(current_dir) + 1} {len(current_dir) + 1 + len(dir_path) + 1} {current_dir} {dir_path}".encode())
+        node_socket.sendall(f"DELEDIR {len(current_dir) + 1} {current_dir} {dir_path}".encode())
 
         response = node_socket.recv(1024).decode().strip()
 
@@ -175,6 +175,56 @@ def handle_mkd_command(dirname, client_socket, current_dir, node_ip='127.0.0.1',
     except Exception as e:
         print(f"Error: {e}")
         client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
+
+
+def handle_rmd_command(dirname, client_socket, current_dir, node_ip='127.0.0.1', node_port=50):
+    dir_path = os.path.normpath(os.path.join(current_dir, dirname))
+
+    try:
+        node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        node_socket.connect((node_ip, node_port))
+        
+        print(f"Connected to {node_ip}:{node_port}")
+        
+        node_socket.sendall(f"RMD {dir_path}".encode())
+
+        response = node_socket.recv(1024).decode().strip()
+
+        if response.startswith("220"):
+            node_socket.close()
+
+            lines = response[4:].split("\n")
+            folder_count = int(lines[0])
+
+            folders = lines[1:folder_count + 1] if folder_count > 0 else []
+            files = lines[folder_count + 1:] if len(lines) > folder_count + 1 else []
+
+            for folder in folders:
+                print(f"RMD {folder}")
+                handle_rmd_command(folder, None, os.path.normpath(os.path.dirname(folder)))
+                
+            for file in files:
+                print(f"DELE {file}")
+                handle_dele_command(file, None, os.path.normpath(os.path.dirname(file)))
+
+            if send_dele_dir_command(dir_path, current_dir) and client_socket:
+                client_socket.send(f'250 "{dir_path}" deleted.\r\n'.encode())
+
+        elif response.startswith("550"):
+            ip, port = response.split(" ")[1].split(":")
+            node_socket.close()
+            handle_rmd_command(dirname, client_socket, current_dir, ip, int(port))
+            return
+        
+        else:
+            if client_socket:
+                client_socket.send(b"550 Directory do not exists.\r\n")
+
+    except Exception as e:
+        print(f"Error: {e}")
+        if client_socket:
+            client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
+
 
 def handle_retr_command(filename, client_socket, data_socket, current_dir, node_ip='127.0.0.1', node_port=50):
     file_path = os.path.join(current_dir, filename)
@@ -282,9 +332,9 @@ def handle_dele_command(filename, client_socket, current_dir, node_ip='127.0.0.1
         if response.startswith("220"):
             node_socket.close()
 
-            if send_dele_dir_command(filename, current_dir):
+            if send_dele_dir_command(filename, current_dir) and client_socket:
                 client_socket.send(b"250 File deleted successfully.\r\n")
-            else:
+            elif client_socket:
                 client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
         elif response.startswith("550"):
@@ -293,12 +343,13 @@ def handle_dele_command(filename, client_socket, current_dir, node_ip='127.0.0.1
             handle_dele_command(filename, client_socket, current_dir, ip, int(port))
             return
         
-        else:
+        elif client_socket:
             client_socket.send(b"550 File not found.\r\n")
 
     except Exception as e:
         print(f"Error: {e}")
-        client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
+        if client_socket:
+            client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
 
 def handle_client(client_socket):
@@ -386,6 +437,10 @@ def handle_client(client_socket):
             elif command.startswith('MKD'):
                 dirname = command[4:].strip()
                 handle_mkd_command(dirname, client_socket, current_dir)
+
+            elif command.startswith('RMD'):
+                dirname = command[4:].strip()
+                handle_rmd_command(dirname, client_socket, current_dir)
 
             else:
                 client_socket.send(b'500 Syntax error, command unrecognized.\r\n')

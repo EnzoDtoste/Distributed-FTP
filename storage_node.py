@@ -90,6 +90,28 @@ def handle_mkd_command(storageNode : StorageNode, key, client_socket):
         
         client_socket.send(f"550 {ip}:{port}".encode())
 
+def handle_rmd_command(storageNode : StorageNode, key, client_socket):
+    id_key = hash_function(key)
+    
+    if (storageNode.predecessor_id > storageNode.identifier and (id_key <= storageNode.identifier or id_key > storageNode.predecessor_id)) or (storageNode.predecessor_id < id_key and id_key <= storageNode.identifier):
+        if key in storageNode.data:
+            dirs = storageNode.data.pop(key)
+
+            try:
+                folders = [folder for folder, info in dirs.items() if info.startswith('drwxr-xr-x')]
+                files = [file for file, info in dirs.items() if info.startswith('-rw-r--r--')]
+
+                client_socket.send(f"220 {"\n".join([str(len(folders))] + folders + files)}".encode())
+
+            except Exception as e:
+                print(f"Error: {e}")
+        else:
+            client_socket.send(f"404 Not Found".encode())
+    else:
+        ip, port = find_successor(storageNode, id_key)
+        
+        client_socket.send(f"550 {ip}:{port}".encode())
+
 def handle_stor_dir_command(storageNode : StorageNode, folder, dirname, info, client_socket):
     id_key = hash_function(folder)
     
@@ -117,7 +139,7 @@ def handle_dele_dir_command(storageNode : StorageNode, folder, dirname, client_s
         if folder in storageNode.data:
             dirs = storageNode.data[folder]
             dirs.pop(dirname)
-
+            print(f"Pop {dirname}")
             try:
                 client_socket.send(f"220".encode())
                 
@@ -171,6 +193,8 @@ def handle_stor_command(storageNode : StorageNode, key, client_socket):
 
     if (storageNode.predecessor_id > storageNode.identifier and (id_key <= storageNode.identifier or id_key > storageNode.predecessor_id)) or (storageNode.predecessor_id < id_key and id_key <= storageNode.identifier):
         try:
+            os.makedirs(os.path.dirname(key), exist_ok=True)
+
             with open(key, "wb") as file: # binary mode
                 client_socket.send(f"220".encode())
 
@@ -256,6 +280,10 @@ def handle_client(storageNode, client_socket):
         elif command.startswith('DELE'):
             key = command[5:].strip()
             handle_dele_command(storageNode, key, client_socket)
+
+        elif command.startswith('RMD'):
+            key = command[4:].strip()
+            handle_rmd_command(storageNode, key, client_socket)
 
     except ConnectionResetError:
         print("Connection reset by peer")
