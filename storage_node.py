@@ -47,10 +47,34 @@ def find_successor(storageNode : StorageNode, id):
         index = len(storageNode.finger_table_bigger) - 1
         return (storageNode.finger_table_bigger[index][1], storageNode.finger_table_bigger[index][2])
 
+def handle_list_command(storageNode : StorageNode, key, client_socket):
+    id_key = hash_function(key)
+    
+    if (storageNode.predecessor_id > storageNode.identifier and (id_key <= storageNode.identifier or id_key > storageNode.predecessor_id)) or (storageNode.predecessor_id < id_key and id_key <= storageNode.identifier):
+        if key in storageNode.data:
+            dirs = storageNode.data[key]
+
+            try:
+                client_socket.send(f"220".encode())
+                response = client_socket.recv(1024).decode().strip()
+
+                if response.startswith("220"):
+                    client_socket.sendall('\n'.join([info for info in dirs.values()]).encode('utf-8'))
+                    print("Transfer complete")
+
+            except Exception as e:
+                print(f"Error: {e}")
+        else:
+            client_socket.send(f"404 Not Found".encode())
+    else:
+        ip, port = find_successor(storageNode, id_key)
+        
+        client_socket.send(f"550 {ip}:{port}".encode())
+
 def handle_retr_command(storageNode : StorageNode, key, client_socket):
     id_key = hash_function(key)
     
-    if (storageNode.predecessor_id > storageNode.identifier or storageNode.predecessor_id < id_key) and id_key <= storageNode.identifier:
+    if (storageNode.predecessor_id > storageNode.identifier and (id_key <= storageNode.identifier or id_key > storageNode.predecessor_id)) or (storageNode.predecessor_id < id_key and id_key <= storageNode.identifier):
         if key in storageNode.data:
             path = storageNode.data[key]
 
@@ -86,7 +110,7 @@ def handle_retr_command(storageNode : StorageNode, key, client_socket):
 def handle_stor_command(storageNode : StorageNode, key, client_socket):
     id_key = hash_function(key)
 
-    if (storageNode.predecessor_id > storageNode.identifier or storageNode.predecessor_id < id_key) and id_key <= storageNode.identifier:
+    if (storageNode.predecessor_id > storageNode.identifier and (id_key <= storageNode.identifier or id_key > storageNode.predecessor_id)) or (storageNode.predecessor_id < id_key and id_key <= storageNode.identifier):
         try:
             with open(key, "wb") as file: # binary mode
                 client_socket.send(f"220".encode())
@@ -116,7 +140,7 @@ def handle_stor_command(storageNode : StorageNode, key, client_socket):
 def handle_dele_command(storageNode : StorageNode, key, client_socket):
     id_key = hash_function(key)
     
-    if (storageNode.predecessor_id > storageNode.identifier or storageNode.predecessor_id < id_key) and id_key <= storageNode.identifier:
+    if (storageNode.predecessor_id > storageNode.identifier and (id_key <= storageNode.identifier or id_key > storageNode.predecessor_id)) or (storageNode.predecessor_id < id_key and id_key <= storageNode.identifier):
         if key in storageNode.data:
             path = storageNode.data[key]
 
@@ -140,7 +164,11 @@ def handle_client(storageNode, client_socket):
         command = client_socket.recv(1024).decode().strip()
         print(f"Received command: {command}")
 
-        if command.startswith('RETR'):
+        if command.startswith('LIST'):
+            key = command[5:].strip()
+            handle_list_command(storageNode, key, client_socket)
+
+        elif command.startswith('RETR'):
             key = command[5:].strip()
             handle_retr_command(storageNode, key, client_socket)
 

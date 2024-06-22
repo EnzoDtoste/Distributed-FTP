@@ -1,7 +1,6 @@
 import socket
 import threading
 import os
-import time
 
 def setup_control_socket(host='0.0.0.0', port=21):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -52,37 +51,51 @@ def send_directory_listing_nlst(client_socket, data_socket, path):
         print(f"Error: {e}")
         client_socket.send(b"550 Failed to list directory.\r\n")
 
-def send_directory_listing(client_socket, data_socket, path):
+def send_directory_listing(client_socket, data_socket, current_dir, node_ip='127.0.0.1', node_port=50):
     try:
-        client_socket.send(b"150 Here comes the directory listing.\r\n")
-        entries = os.listdir(path)
+        node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        node_socket.connect((node_ip, node_port))
         
-        listing = []
-        for entry in entries:
-            try:
-                filepath = os.path.join(path, entry)
-                stats = os.stat(filepath)
-                file_info = {
-                    'permissions': 'drwxr-xr-x' if os.path.isdir(filepath) else '-rw-r--r--',
-                    'links': stats.st_nlink,
-                    'owner': stats.st_uid,
-                    'group': stats.st_gid,
-                    'size': stats.st_size,
-                    'mtime': time.strftime("%b %d %H:%M", time.gmtime(stats.st_mtime)),
-                    'name': entry
-                }
-                
-                listing.append("{permissions} {links} {owner} {group} {size} {mtime} {name}".format(**file_info))
-            
-            except:
-                print("Could not read: " + str(entry))
+        print(f"Connected to {node_ip}:{node_port}")
+        
+        node_socket.sendall(f"LIST {current_dir}".encode())
 
-        data_socket.sendall('\n'.join(listing).encode('utf-8'))
-        data_socket.close()
-        client_socket.send(b"226 Directory send OK.\r\n")
+        response = node_socket.recv(1024).decode().strip()
+
+        if response.startswith("220"):
+            client_socket.send(b"150 Here comes the directory listing.\r\n")
+
+            node_socket.send(b"220 Ok")
+
+            data = ""
+
+            while True:
+                chunck = node_socket.recv(4096).decode('utf-8')
+
+                if chunck:
+                    data += chunck
+                else:
+                    break
+            
+            data_socket.sendall(data.encode('utf-8'))
+
+            node_socket.close()
+            client_socket.send(b"226 Directory send OK.\r\n")
+            print("Transfer complete")
+
+        elif response.startswith("550"):
+            ip, port = response.split(" ")[1].split(":")
+            node_socket.close()
+            send_directory_listing(client_socket, data_socket, current_dir, ip, int(port))
+            return
+        
+        else:
+            client_socket.send(b"550 Failed to list directory.\r\n")
+
     except Exception as e:
         print(f"Error: {e}")
-        client_socket.send(b"550 Failed to list directory.\r\n")
+        client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
+
 
 def handle_retr_command(filename, client_socket, data_socket, current_dir, node_ip='127.0.0.1', node_port=50):
     file_path = os.path.join(current_dir, filename)
@@ -214,7 +227,7 @@ def handle_mkd_command(dirname, client_socket, current_dir):
 
 
 def handle_client(client_socket):
-    current_dir = "/[Cine Clasico] Red Planet (2000) DUAL"  # Working directory
+    current_dir = os.path.normpath("/[Cine Clasico] Red Planet (2000) DUAL")  # Working directory
     data_socket = None
 
     try:
@@ -269,14 +282,13 @@ def handle_client(client_socket):
             elif command.startswith('LIST'):
                 if data_socket:
                     send_directory_listing(client_socket, data_socket, current_dir)
+                    data_socket.close()
                     data_socket = None  # Reset data_socket after use
 
             elif command.startswith('CWD'):
-                new_dir = command[4:].strip()
+                new_path = os.path.normpath(command[4:].strip())
 
-                new_path = os.path.join(current_dir, new_dir)
-                
-                if os.path.exists(new_path) and os.path.isdir(new_path):
+                if new_path != '..':
                     current_dir = new_path
                     client_socket.send(b'250 Directory successfully changed.\r\n')
                 else:
