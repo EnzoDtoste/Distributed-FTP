@@ -1,4 +1,4 @@
-from storage_node import StorageNode, accept_connections_async, hash_function
+from storage_node import StorageNode, accept_connections_async, hash_function, request_join
 import os
 import time
 
@@ -16,14 +16,17 @@ def main():
 
     ##########   Build Finger Table   ###########
 
+    k = 3
+
     for n, node in enumerate(nodes):
-        node.predecessor_id = nodes[n - 1].identifier
+        node.predecessor = nodes[n - 1].identifier, nodes[n - 1].host, nodes[n - 1].port
+        node.succesors = [(nodes[i].identifier, nodes[i].host, nodes[i].port) for i in (list(range(min(n + 1, len(nodes) - 1), min(n + 1 + k, len(nodes)))) + list(range(k - len(nodes) + n)))]
 
         for i in range(160):
             successor = get_closest_up(node.identifier + 2 ** i)
     
             if successor and (len(node.finger_table_bigger) == 0 or node.finger_table_bigger[-1][0] != successor.identifier):
-                node.finger_table_bigger.append((successor.identifier, '127.0.0.1', successor.port))
+                node.finger_table_bigger.append((successor.identifier, successor.host, successor.port))
             elif not successor:
                 for j in range(160 - i):
                     successor = get_closest_up(2 ** j)
@@ -32,7 +35,7 @@ def main():
                         break
 
                     if len(node.finger_table_smaller) == 0 or node.finger_table_smaller[-1][0] != successor.identifier:
-                        node.finger_table_smaller.append((successor.identifier, '127.0.0.1', successor.port))
+                        node.finger_table_smaller.append((successor.identifier, successor.host, successor.port))
 
                 break
 
@@ -41,26 +44,11 @@ def main():
     ##########   Read & Replicate Data   ###########
 
     def replicate(node : StorageNode, key, value):
-        k = 3
-
         node.data[key] = value
 
-        for successor_id, _, _ in node.finger_table_bigger:
-            if k > 0:
-                successor = get_closest_up(successor_id)
-                successor.data[key] = value
-                k -= 1
-            else:
-                break
-
-        for successor_id, _, _ in node.finger_table_smaller:
-            if k > 0:
-                successor = get_closest_up(successor_id)
-                successor.data[key] = value
-                k -= 1
-            else:
-                break
-
+        for successor_id, _, _ in node.succesors:
+            successor = get_closest_up(successor_id)
+            successor.data[key] = value
 
 
     root_path = os.path.normpath("/[Cine Clasico] Red Planet (2000) DUAL")
@@ -145,6 +133,9 @@ def main():
     
     while True:
         input()
+
+        new_node = StorageNode(port = 205)
+        request_join(new_node)
 
 if __name__ == "__main__":
     main()

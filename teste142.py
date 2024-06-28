@@ -16,14 +16,17 @@ def main():
 
     ##########   Build Finger Table   ###########
 
+    k = 3
+
     for n, node in enumerate(nodes):
-        node.predecessor_id = nodes[n - 1].identifier
+        node.predecessor = nodes[n - 1].identifier, nodes[n - 1].host, nodes[n - 1].port
+        node.succesors = [(nodes[i].identifier, nodes[i].host, nodes[i].port) for i in (list(range(min(n + 1, len(nodes) - 1), min(n + 1 + k, len(nodes)))) + list(range(k - len(nodes) + n)))]
 
         for i in range(160):
             successor = get_closest_up(node.identifier + 2 ** i)
     
             if successor and (len(node.finger_table_bigger) == 0 or node.finger_table_bigger[-1][0] != successor.identifier):
-                node.finger_table_bigger.append((successor.identifier, '127.0.0.1', successor.port))
+                node.finger_table_bigger.append((successor.identifier, successor.host, successor.port))
             elif not successor:
                 for j in range(160 - i):
                     successor = get_closest_up(2 ** j)
@@ -32,7 +35,7 @@ def main():
                         break
 
                     if len(node.finger_table_smaller) == 0 or node.finger_table_smaller[-1][0] != successor.identifier:
-                        node.finger_table_smaller.append((successor.identifier, '127.0.0.1', successor.port))
+                        node.finger_table_smaller.append((successor.identifier, successor.host, successor.port))
 
                 break
 
@@ -41,25 +44,11 @@ def main():
     ##########   Read & Replicate Data   ###########
 
     def replicate(node : StorageNode, key, value):
-        k = 3
-
         node.data[key] = value
 
-        for successor_id, _, _ in node.finger_table_bigger:
-            if k > 0:
-                successor = get_closest_up(successor_id)
-                successor.data[key] = value
-                k -= 1
-            else:
-                break
-
-        for successor_id, _, _ in node.finger_table_smaller:
-            if k > 0:
-                successor = get_closest_up(successor_id)
-                successor.data[key] = value
-                k -= 1
-            else:
-                break
+        for successor_id, _, _ in node.succesors:
+            successor = get_closest_up(successor_id)
+            successor.data[key] = value
 
 
 
@@ -137,7 +126,7 @@ def main():
 
     ##########   Accept Connections  ###########
 
-    node = get_closest_up(hash_function("0.0.0.0:142"))
+    node = get_closest_up(hash_function("127.0.0.1:142"))
 
     node.socket = setup_control_socket(port = 142)
     accept_connections_async(node)

@@ -2,6 +2,7 @@ import socket
 import threading
 import os
 from datetime import datetime
+from storage_node import find_successor
 
 def setup_control_socket(host='0.0.0.0', port=21):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -40,6 +41,8 @@ def handle_port_command(command, client_socket):
 
 def send_directory_listing(client_socket, data_socket, current_dir, node_ip='127.0.0.1', node_port=50):
     try:
+        node_ip, node_port = find_successor(current_dir, node_ip, node_port)
+        
         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         node_socket.connect((node_ip, node_port))
         
@@ -88,6 +91,8 @@ def send_stor_dir_command(dirname, info, current_dir, node_ip='127.0.0.1', node_
     dir_path = os.path.normpath(os.path.join(current_dir, dirname))
 
     try:
+        node_ip, node_port = find_successor(current_dir, node_ip, node_port)
+
         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         node_socket.connect((node_ip, node_port))
         
@@ -117,6 +122,8 @@ def send_dele_dir_command(dirname, current_dir, node_ip='127.0.0.1', node_port=5
     dir_path = os.path.normpath(os.path.join(current_dir, dirname))
 
     try:
+        node_ip, node_port = find_successor(current_dir, node_ip, node_port)
+
         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         node_socket.connect((node_ip, node_port))
         
@@ -146,6 +153,8 @@ def handle_mkd_command(dirname, client_socket, current_dir, node_ip='127.0.0.1',
     new_dir_path = os.path.normpath(os.path.join(current_dir, dirname))
 
     try:
+        node_ip, node_port = find_successor(new_dir_path, node_ip, node_port)
+
         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         node_socket.connect((node_ip, node_port))
         
@@ -181,6 +190,8 @@ def handle_rmd_command(dirname, client_socket, current_dir, node_ip='127.0.0.1',
     dir_path = os.path.normpath(os.path.join(current_dir, dirname))
 
     try:
+        node_ip, node_port = find_successor(dir_path, node_ip, node_port)
+
         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         node_socket.connect((node_ip, node_port))
         
@@ -230,6 +241,8 @@ def handle_retr_command(filename, client_socket, data_socket, current_dir, node_
     file_path = os.path.join(current_dir, filename)
     
     try:
+        node_ip, node_port = find_successor(file_path, node_ip, node_port)
+
         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         node_socket.connect((node_ip, node_port))
         
@@ -307,6 +320,8 @@ def handle_stor_command(filename, client_socket, data_socket, current_dir, node_
     file_path = os.path.join(current_dir, filename)
     
     try:
+        node_ip, node_port = find_successor(file_path, node_ip, node_port)
+
         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         node_socket.connect((node_ip, node_port))
         
@@ -352,6 +367,8 @@ def handle_dele_command(filename, client_socket, current_dir, node_ip='127.0.0.1
     file_path = os.path.join(current_dir, filename)
     
     try:
+        node_ip, node_port = find_successor(file_path, node_ip, node_port)
+
         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         node_socket.connect((node_ip, node_port))
         
