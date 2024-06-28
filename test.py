@@ -126,7 +126,7 @@ def main():
     ##########   Accept Connections  ###########
 
     for node in nodes:
-        if node.port != 142:
+        if node.port != 128:
             accept_connections_async(node)
         else:
             node.socket.close()

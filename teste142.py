@@ -126,9 +126,9 @@ def main():
 
     ##########   Accept Connections  ###########
 
-    node = get_closest_up(hash_function("127.0.0.1:142"))
+    node = get_closest_up(hash_function("127.0.0.1:128"))
 
-    node.socket = setup_control_socket(port = 142)
+    node.socket = setup_control_socket(port = 128)
     accept_connections_async(node)
     
     while True:
