@@ -33,7 +33,7 @@ class StorageNode:
         self.succesor = None
         self.k_succesors = 3
         self.reading_finger_table = False
-        self.updating_finger_table = False
+        self.updating = False
 
 def get_table_successor(finger_table, id):
     for i in range(len(finger_table)):
@@ -45,7 +45,7 @@ def get_table_successor(finger_table, id):
     return (finger_table[index][1], finger_table[index][2])
 
 def find_table_successor(storageNode : StorageNode, id):
-    while storageNode.updating_finger_table:
+    while storageNode.updating:
         pass
 
     storageNode.reading_finger_table = True
@@ -114,7 +114,7 @@ def check_successors(storageNode : StorageNode):
             ip, port = find_successor(new_successors[-1][0] + 1, new_successors[-1][1], new_successors[-1][2], True)
             new_successors.append((hash_function(getId(ip, port)), ip, port))
 
-        for new_succesor in new_successors - storageNode.succesors:
+        for new_succesor in set(new_successors) - set(storageNode.succesors):
             node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             node_socket.connect((new_succesor[1], new_succesor[2]))
             
@@ -166,7 +166,17 @@ def check_successors(storageNode : StorageNode):
             
             node_socket.close()
 
+        storageNode.updating = True
+
+        while storageNode.reading_finger_table:
+            pass
+
+        storageNode.succesors = new_successors
+
+        storageNode.updating = False
+
     except Exception as e:
+        storageNode.updating = False
         print(f"Error: {e}")
 
 def handle_rp_command(storageNode : StorageNode, client_socket):
@@ -210,7 +220,7 @@ def handle_rp_command(storageNode : StorageNode, client_socket):
                     count = 0
                     while count < size:
                         data = client_socket.recv(4096)
-                        file.write(data)
+                        #file.write(data)
                         count += len(data)
                     
                     storageNode.data[key] = key
@@ -258,7 +268,7 @@ def update_finger_table(storageNode : StorageNode):
                 break
                 
 
-        storageNode.updating_finger_table = True
+        storageNode.updating = True
 
         while storageNode.reading_finger_table:
             pass
@@ -266,10 +276,10 @@ def update_finger_table(storageNode : StorageNode):
         storageNode.finger_table_bigger = new_finger_table_bigger
         storageNode.finger_table_smaller = new_finger_table_smaller
 
-        storageNode.updating_finger_table = False
+        storageNode.updating = False
 
     except Exception as e:
-        storageNode.updating_finger_table = False
+        storageNode.updating = False
         print(f"Error: {e}")
 
 def request_join(storageNode : StorageNode, node_ip='127.0.0.1', node_port=50):
@@ -288,12 +298,9 @@ def request_join(storageNode : StorageNode, node_ip='127.0.0.1', node_port=50):
         if response.startswith("220"):
             node_socket.close()
 
-            #addresses = [(address.split(":")[0], int(address.split(":")[1])) for address in response[4:].split(" ")]
-            #storageNode.predecessor = hash_function(getId(addresses[0][0], addresses[0][1])), addresses[0][0], addresses[0][1]
-
-            storageNode.succesors = [(hash_function(getId(node_ip, node_port)), node_ip, node_port)] # + [(hash_function(getId(address[0], address[1])), address[0], address[1]) for address in addresses[1:]]
-
-            predecessor_ip, predecessor_port = response[4:].split(" ")[1].split(":")
+            storageNode.succesor = hash_function(getId(node_ip, node_port)), node_ip, node_port
+            
+            predecessor_ip, predecessor_port = response[4:].split(":")
             predecessor_port = int(predecessor_port)
 
             storageNode.predecessor = hash_function(getId(predecessor_ip, predecessor_port)), predecessor_ip, predecessor_port
@@ -304,8 +311,8 @@ def request_join(storageNode : StorageNode, node_ip='127.0.0.1', node_port=50):
             predecessor_socket.sendall(f"SS {storageNode.host}:{storageNode.port}".encode())
             print(f"Notified Predecessor {predecessor_ip}:{predecessor_port}")
 
-            update_finger_table(storageNode)
             check_successors(storageNode)
+            update_finger_table(storageNode)
 
             print("---------------")
             print(storageNode.succesors)
@@ -327,7 +334,6 @@ def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
     join_node_id = hash_function(getId(ip, port))
 
     try:
-        #client_socket.send(f"220 {" ".join([ip + ":" + str(port) for _, ip, port in [storageNode.predecessor] + storageNode.succesors[:len(storageNode.succesors) - 1]])}".encode())
         client_socket.send(f"220 {storageNode.predecessor[1]}:{storageNode.predecessor[2]}".encode())
         storageNode.predecessor = join_node_id, ip, port
 

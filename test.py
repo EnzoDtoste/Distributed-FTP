@@ -131,10 +131,11 @@ def main():
         else:
             node.socket.close()
     
+    new_node = StorageNode(port = 205)
+
     while True:
         input()
 
-        new_node = StorageNode(port = 205)
         request_join(new_node)
 
 if __name__ == "__main__":
