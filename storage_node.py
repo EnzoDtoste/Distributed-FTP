@@ -3,6 +3,7 @@ import socket
 import os
 import hashlib
 import json
+from datetime import datetime
 
 def hash_function(key):
     """ Retorna un hash entero de 160 bits del input key """
@@ -50,7 +51,10 @@ def find_table_successor(storageNode : StorageNode, id):
 
     storageNode.reading_finger_table = True
 
-    if id > storageNode.identifier:
+    if len(storageNode.finger_table_bigger) == 0 and len(storageNode.finger_table_smaller) == 0:
+        result = storageNode.succesor[1], storageNode.succesor[2]
+
+    elif len(storageNode.finger_table_bigger) > 0 and id > storageNode.identifier:
         result = get_table_successor(storageNode.finger_table_bigger, id)
     
     elif len(storageNode.finger_table_smaller) > 0:
@@ -126,10 +130,10 @@ def check_successors(storageNode : StorageNode):
 
             if response.startswith("220"):
                 for key, value in storageNode.data.items():
-                    if isinstance(value, dict):
+                    if isinstance(value[0], dict):
                         
                         data = f"{json.dumps(value)}".encode()
-                        node_socket.sendall(f"Folder {len(data)} {key}".encode())
+                        node_socket.sendall(f"Folder {value[1].strftime('%Y%m%d%H%M%S')} {len(data)} {key}".encode())
 
                         response = node_socket.recv(1024).decode().strip()
 
@@ -138,16 +142,18 @@ def check_successors(storageNode : StorageNode):
 
                             response = node_socket.recv(1024).decode().strip()
 
-                            if not response.startswith("220"):
+                            if (not response) or not response.startswith("220"):
                                 raise Exception(f"Something went wrong replicating {new_succesor[1]}:{new_succesor[2]} {key}")
 
+                            print(f"Transfer complete {key}")
+
                     else:
-                        node_socket.sendall(f"File {os.stat(value).st_size} {key}".encode())
+                        node_socket.sendall(f"File {value[1].strftime('%Y%m%d%H%M%S')} {os.stat(value[0]).st_size} {key}".encode())
 
                         response = node_socket.recv(1024).decode().strip()
 
                         if response.startswith("220"):
-                            with open(value, "rb") as file:
+                            with open(value[0], "rb") as file:
                                 data = file.read(4096)
                                 count = 0
                                 while data:
@@ -157,10 +163,10 @@ def check_successors(storageNode : StorageNode):
 
                             response = node_socket.recv(1024).decode().strip()
 
-                            if not response.startswith("220"):
+                            if (not response) or not response.startswith("220"):
                                 raise Exception(f"Something went wrong replicating {new_succesor[1]}:{new_succesor[2]} {key}")
 
-                    print(f"Transfer complete {key}")
+                            print(f"Transfer complete {key}")
 
                 node_socket.send(b"226 Transfer complete.\r\n")
             
@@ -189,43 +195,53 @@ def handle_rp_command(storageNode : StorageNode, client_socket):
             if response.startswith("Folder"):
                 args = response[7:].strip().split(" ")
                 
-                size = args[0]
-                path = " ".join(args[1:])
+                version = datetime.strptime(args[0], '%Y%m%d%H%M%S')
+                size = args[1]
+                path = " ".join(args[2:])
 
-                client_socket.send(f"220".encode())
-                    
-                data_json = ""
-
-                count = 0
-                while count < size:
-                    data = client_socket.recv(4096)
-                    data_json += data.decode()
-                    count += len(data)
-
-                storageNode.data[path] = json.loads(data_json)
-                client_socket.send(f"220".encode())
-                print(f"Transfer complete {path}")
-
-            elif response.startswith("File"):
-                args = response[5:].strip().split(" ")
-                
-                size = args[0]
-                key = " ".join(args[1:])
-
-                os.makedirs(os.path.dirname(key), exist_ok=True)
-
-                with open(key, "wb") as file: # binary mode
+                if path not in storageNode.data or storageNode.data[path][1] < version:
                     client_socket.send(f"220".encode())
+                        
+                    data_json = ""
 
                     count = 0
                     while count < size:
                         data = client_socket.recv(4096)
-                        #file.write(data)
+                        data_json += data.decode()
                         count += len(data)
-                    
-                    storageNode.data[key] = key
+
+                    storageNode.data[path] = json.loads(data_json), version
                     client_socket.send(f"220".encode())
-                    print(f"Transfer complete {key}")
+                    print(f"Transfer complete {path}")
+
+                else:
+                    client_socket.send(f"403".encode())
+
+            elif response.startswith("File"):
+                args = response[5:].strip().split(" ")
+                
+                version = datetime.strptime(args[0], '%Y%m%d%H%M%S')
+                size = args[1]
+                key = " ".join(args[2:])
+
+                if key not in storageNode.data or storageNode.data[key][1] < version:
+                    os.makedirs(os.path.dirname(key), exist_ok=True)
+
+                    with open(key, "wb") as file: # binary mode
+                        client_socket.send(f"220".encode())
+
+                        count = 0
+                        while count < size:
+                            data = client_socket.recv(4096)
+                            file.write(data)
+                            count += len(data)
+                        
+                        storageNode.data[key] = key, version
+                        client_socket.send(f"220".encode())
+                        print(f"Transfer complete {key}")
+
+                else:
+                    client_socket.send(f"403".encode())
 
             elif response.startswith("226"):
                 break
@@ -296,14 +312,73 @@ def request_join(storageNode : StorageNode, node_ip='127.0.0.1', node_port=50):
         response = node_socket.recv(1024).decode().strip()
 
         if response.startswith("220"):
-            node_socket.close()
-
             storageNode.succesor = hash_function(getId(node_ip, node_port)), node_ip, node_port
-            
+
             predecessor_ip, predecessor_port = response[4:].split(":")
             predecessor_port = int(predecessor_port)
 
             storageNode.predecessor = hash_function(getId(predecessor_ip, predecessor_port)), predecessor_ip, predecessor_port
+
+            node_socket.send(f"220".encode())
+
+            while(True):
+                response = node_socket.recv(1024).decode().strip()
+
+                if response.startswith("Folder"):
+                    args = response[7:].strip().split(" ")
+                    
+                    version = datetime.strptime(args[0], '%Y%m%d%H%M%S')
+                    size = args[1]
+                    path = " ".join(args[2:])
+
+                    if path not in storageNode.data or storageNode.data[path][1] < version:
+                        node_socket.send(f"220".encode())
+                            
+                        data_json = ""
+
+                        count = 0
+                        while count < size:
+                            data = node_socket.recv(4096)
+                            data_json += data.decode()
+                            count += len(data)
+
+                        storageNode.data[path] = json.loads(data_json), version
+                        node_socket.send(f"220".encode())
+                        print(f"Transfer complete {path}")
+
+                    else:
+                        node_socket.send(f"403".encode())
+
+                elif response.startswith("File"):
+                    args = response[5:].strip().split(" ")
+                    
+                    version = datetime.strptime(args[0], '%Y%m%d%H%M%S')
+                    size = args[1]
+                    key = " ".join(args[2:])
+
+                    if key not in storageNode.data or storageNode.data[key][1] < version:
+                        os.makedirs(os.path.dirname(key), exist_ok=True)
+
+                        with open(key, "wb") as file: # binary mode
+                            node_socket.send(f"220".encode())
+
+                            count = 0
+                            while count < size:
+                                data = node_socket.recv(4096)
+                                file.write(data)
+                                count += len(data)
+                            
+                            storageNode.data[key] = key, version
+                            node_socket.send(f"220".encode())
+                            print(f"Transfer complete {key}")
+
+                    else:
+                        node_socket.send(f"403".encode())
+
+                elif response.startswith("226"):
+                    break
+
+            node_socket.close()
 
             predecessor_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             predecessor_socket.connect((predecessor_ip, predecessor_port))
@@ -335,7 +410,55 @@ def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
 
     try:
         client_socket.send(f"220 {storageNode.predecessor[1]}:{storageNode.predecessor[2]}".encode())
-        storageNode.predecessor = join_node_id, ip, port
+
+        response = client_socket.recv(1024).decode().strip()
+
+        if response.startswith("220"):
+            for key, value in storageNode.data.items():
+                id_key = hash_function(key)
+
+                if id_key > storageNode.predecessor[0] and id_key <= join_node_id:
+                    if isinstance(value[0], dict):
+                        
+                        data = f"{json.dumps(value)}".encode()
+                        client_socket.sendall(f"Folder {value[1].strftime('%Y%m%d%H%M%S')} {len(data)} {key}".encode())
+
+                        response = client_socket.recv(1024).decode().strip()
+
+                        if response.startswith("220"):
+                            client_socket.sendall(data)
+
+                            response = client_socket.recv(1024).decode().strip()
+
+                            if (not response) or not response.startswith("220"):
+                                raise Exception(f"Something went wrong sending data {ip}:{port} {key}")
+
+                            print(f"Transfer complete {key}")
+
+                    else:
+                        client_socket.sendall(f"File {value[1].strftime('%Y%m%d%H%M%S')} {os.stat(value[0]).st_size} {key}".encode())
+
+                        response = client_socket.recv(1024).decode().strip()
+
+                        if response.startswith("220"):
+                            with open(value[0], "rb") as file:
+                                data = file.read(4096)
+                                count = 0
+                                while data:
+                                    client_socket.sendall(data)
+                                    count += len(data)
+                                    data = file.read(4096)
+
+                            response = client_socket.recv(1024).decode().strip()
+
+                            if (not response) or not response.startswith("220"):
+                                raise Exception(f"Something went wrong replicating {ip}:{port} {key}")
+
+                            print(f"Transfer complete {key}")
+
+            client_socket.send(b"226 Transfer complete.\r\n")
+
+            storageNode.predecessor = join_node_id, ip, port
 
     except Exception as e:
         print(f"Error: {e}")
@@ -346,7 +469,7 @@ def handle_ss_command(storageNode : StorageNode, ip, port, client_socket):
 
 def handle_list_command(storageNode : StorageNode, key, client_socket):
     if key in storageNode.data:
-        dirs = storageNode.data[key]
+        dirs = storageNode.data[key][0]
 
         try:
             client_socket.send(f"220".encode())
@@ -364,7 +487,8 @@ def handle_list_command(storageNode : StorageNode, key, client_socket):
 
 def handle_mkd_command(storageNode : StorageNode, key, client_socket):
     if key not in storageNode.data:
-        storageNode.data[key] = {}
+        time = datetime.now()
+        storageNode.data[key] = {}, time
 
         try:
             client_socket.send(f"220".encode())
@@ -377,7 +501,7 @@ def handle_mkd_command(storageNode : StorageNode, key, client_socket):
 
 def handle_rmd_command(storageNode : StorageNode, key, client_socket):
     if key in storageNode.data:
-        dirs = storageNode.data.pop(key)
+        dirs = storageNode.data.pop(key)[0]
 
         try:
             folders = [folder for folder, info in dirs.items() if info.startswith('drwxr-xr-x')]
@@ -393,8 +517,10 @@ def handle_rmd_command(storageNode : StorageNode, key, client_socket):
 
 def handle_stor_dir_command(storageNode : StorageNode, folder, dirname, info, client_socket):
     if folder in storageNode.data:
-        dirs = storageNode.data[folder]
+        time = datetime.now()
+        dirs = storageNode.data[folder][0]
         dirs[dirname] = info
+        storageNode.data[folder] = dirs, time
 
         try:
             client_socket.send(f"220".encode())
@@ -407,9 +533,13 @@ def handle_stor_dir_command(storageNode : StorageNode, folder, dirname, info, cl
 
 def handle_dele_dir_command(storageNode : StorageNode, folder, dirname, client_socket):
     if folder in storageNode.data:
-        dirs = storageNode.data[folder]
+        time = datetime.now()
+        dirs = storageNode.data[folder][0]
         dirs.pop(dirname)
+        storageNode.data[folder] = dirs, time
+
         print(f"Pop {dirname}")
+        
         try:
             client_socket.send(f"220".encode())
             
@@ -421,7 +551,7 @@ def handle_dele_dir_command(storageNode : StorageNode, folder, dirname, client_s
 
 def handle_retr_command(storageNode : StorageNode, key, idx, client_socket):
     if key in storageNode.data:
-        path = storageNode.data[key]
+        path = storageNode.data[key][0]
 
         try:
             with open(path, "rb") as file: # binary mode
@@ -467,7 +597,8 @@ def handle_stor_command(storageNode : StorageNode, key, client_socket):
 
                     file.write(data)
                 
-                storageNode.data[key] = key
+                time = datetime.now()
+                storageNode.data[key] = key, time
 
     except Exception as e:
         print(f"Error: {e}")
@@ -475,12 +606,12 @@ def handle_stor_command(storageNode : StorageNode, key, client_socket):
 
 def handle_dele_command(storageNode : StorageNode, key, client_socket):
     if key in storageNode.data:
-        path = storageNode.data[key]
+        path = storageNode.data[key][0]
 
         try:
-            client_socket.send(f"220".encode())
             storageNode.data.pop(key)
             os.remove(path)
+            client_socket.send(f"220".encode())
 
         except Exception as e:
             print(f"Error: {e}")
@@ -497,6 +628,9 @@ def handle_client(storageNode, client_socket):
         if command.startswith('GS'):
             key = command[3:].strip()
             handle_gs_command(storageNode, int(key), client_socket)
+
+        elif command.startswith('RP'):
+            handle_rp_command(storageNode, client_socket)
 
         elif command.startswith('SS'):
             ip, port = command[3:].strip().split(":")

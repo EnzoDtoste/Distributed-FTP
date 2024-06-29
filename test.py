@@ -1,6 +1,7 @@
 from storage_node import StorageNode, accept_connections_async, hash_function, request_join
 import os
 import time
+import datetime
 
 def main():
     nodes = [StorageNode(port = i) for i in range(50, 200, 2)]
@@ -44,11 +45,12 @@ def main():
     ##########   Read & Replicate Data   ###########
 
     def replicate(node : StorageNode, key, value):
-        node.data[key] = value
+        time = datetime.datetime.now()
+        node.data[key] = (value, time)
 
         for successor_id, _, _ in node.succesors:
             successor = get_closest_up(successor_id)
-            successor.data[key] = value
+            successor.data[key] = (value, time)
 
 
     root_path = os.path.normpath("/[Cine Clasico] Red Planet (2000) DUAL")
