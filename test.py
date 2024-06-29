@@ -21,7 +21,8 @@ def main():
 
     for n, node in enumerate(nodes):
         node.predecessor = nodes[n - 1].identifier, nodes[n - 1].host, nodes[n - 1].port
-        node.successors = [(nodes[i].identifier, nodes[i].host, nodes[i].port) for i in (list(range(min(n + 1, len(nodes) - 1), min(n + 1 + k, len(nodes)))) + list(range(k - len(nodes) + n)))]
+        node.successors = [(nodes[i].identifier, nodes[i].host, nodes[i].port) for i in ((list(range(n + 1, min(n + 1 + k, len(nodes)))) if n + 1 < len(nodes) else []) + list(range(k - len(nodes) + n + 1)))]
+        node.successor = node.successors[0]
 
         for i in range(160):
             successor = get_closest_up(node.identifier + 2 ** i)
@@ -128,11 +129,26 @@ def main():
     ##########   Accept Connections  ###########
 
     for node in nodes:
-        if node.port != 128:
+        if node.port != -1:
             accept_connections_async(node)
         else:
             node.socket.close()
     
+    for node in nodes:
+        node.update_thread.start()
+    #     print('----------------')
+    #     print(node.finger_table_bigger)
+    #     print(node.finger_table_smaller)
+    #     print(node.successors)
+    #     print(node.successor)
+    #     print('-----------------')
+
+    # for node in nodes[-10:]:
+    #     print('--------------')
+    #     print(node.host + ":" + str(node.port))
+    #     print(node.identifier)
+    #     print('---------------')
+
     new_node = StorageNode(port = 205)
 
     while True:

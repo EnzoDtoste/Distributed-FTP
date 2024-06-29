@@ -22,6 +22,7 @@ def main():
     for n, node in enumerate(nodes):
         node.predecessor = nodes[n - 1].identifier, nodes[n - 1].host, nodes[n - 1].port
         node.successors = [(nodes[i].identifier, nodes[i].host, nodes[i].port) for i in (list(range(min(n + 1, len(nodes) - 1), min(n + 1 + k, len(nodes)))) + list(range(k - len(nodes) + n)))]
+        node.successor = node.successors[0]
 
         for i in range(160):
             successor = get_closest_up(node.identifier + 2 ** i)
@@ -132,6 +133,7 @@ def main():
 
     node.socket = setup_control_socket(port = 128)
     accept_connections_async(node)
+    node.update_thread.start()
     
     while True:
         input()
