@@ -21,7 +21,7 @@ def main():
 
     for n, node in enumerate(nodes):
         node.predecessor = nodes[n - 1].identifier, nodes[n - 1].host, nodes[n - 1].port
-        node.succesors = [(nodes[i].identifier, nodes[i].host, nodes[i].port) for i in (list(range(min(n + 1, len(nodes) - 1), min(n + 1 + k, len(nodes)))) + list(range(k - len(nodes) + n)))]
+        node.successors = [(nodes[i].identifier, nodes[i].host, nodes[i].port) for i in (list(range(min(n + 1, len(nodes) - 1), min(n + 1 + k, len(nodes)))) + list(range(k - len(nodes) + n)))]
 
         for i in range(160):
             successor = get_closest_up(node.identifier + 2 ** i)
@@ -48,7 +48,7 @@ def main():
         time = datetime.datetime.now()
         node.data[key] = (value, time)
 
-        for successor_id, _, _ in node.succesors:
+        for successor_id, _, _ in node.successors:
             successor = get_closest_up(successor_id)
             successor.data[key] = (value, time)
 

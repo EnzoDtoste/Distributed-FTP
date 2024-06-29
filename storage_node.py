@@ -30,11 +30,12 @@ class StorageNode:
         self.finger_table_bigger = []
         self.finger_table_smaller = []
         self.predecessor = None
-        self.succesors = []
-        self.succesor = None
-        self.k_succesors = 3
+        self.successors = []
+        self.successor = None
+        self.k_successors = 3
         self.reading_finger_table = False
         self.updating = False
+        self.handling_join = False
 
 def get_table_successor(finger_table, id):
     for i in range(len(finger_table)):
@@ -52,7 +53,7 @@ def find_table_successor(storageNode : StorageNode, id):
     storageNode.reading_finger_table = True
 
     if len(storageNode.finger_table_bigger) == 0 and len(storageNode.finger_table_smaller) == 0:
-        result = storageNode.succesor[1], storageNode.succesor[2]
+        result = storageNode.successor[1], storageNode.successor[2]
 
     elif len(storageNode.finger_table_bigger) > 0 and id > storageNode.identifier:
         result = get_table_successor(storageNode.finger_table_bigger, id)
@@ -69,10 +70,10 @@ def find_table_successor(storageNode : StorageNode, id):
 
 
 def get_k_successors(node : StorageNode):
-    k = node.k_succesors
+    k = node.k_successors
     result = []
 
-    for _, ip, port in node.succesors:
+    for _, ip, port in node.successors:
         if k > 0:
             result.append(f"{ip}:{port}") 
             k -= 1
@@ -92,37 +93,81 @@ def find_successor(id_key, node_ip='127.0.0.1', node_port=50, hash = False):
     if not hash:
         id_key = hash_function(id_key)
     
-    node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    node_socket.connect((node_ip, node_port))
-    
-    print(f"Connected to {node_ip}:{node_port}")
-    
-    node_socket.sendall(f"GS {id_key}".encode())
+    history = []
 
-    response = node_socket.recv(1024).decode().strip()
+    while True:
+        node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        
+        try:
+            node_socket.connect((node_ip, node_port))
+        
+            history.append((node_ip, node_port))
 
-    if response.startswith("220"):
+            print(f"Connected to {node_ip}:{node_port}")
+            
+            node_socket.sendall(f"GS {id_key}".encode())
+
+            response = node_socket.recv(1024).decode().strip()
+
+        except:
+            node_socket.close()
+            
+            if len(history) > 0:
+                node_ip, node_port = history.pop()
+                continue
+            else:
+                break
+
+
+        if response.startswith("220"):
+            node_socket.close()
+            return node_ip, node_port
+        
+        ip, port = response.split(" ")[1].split(":")
         node_socket.close()
-        return node_ip, node_port
+        
+        node_ip = ip
+        node_port = int(port)
+
+
+def ping_node(node_ip, node_port):
+    node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     
-    ip, port = response.split(" ")[1].split(":")
-    node_socket.close()
-    return find_successor(id_key, ip, int(port), True)
+    try:
+        node_socket.connect((node_ip, node_port))
+
+        node_socket.sendall(f"PING".encode())
+        print(f"Ping to {node_ip}:{node_port}")
+
+        response = node_socket.recv(1024).decode().strip()
+        node_socket.close()
+
+        return response.startswith("220")
+    except:
+        return False
+    
+def handle_ping_command(client_socket):
+    client_socket.send(f"220".encode())
 
 
 def check_successors(storageNode : StorageNode):
     try:
-        new_successors = [storageNode.succesor]
+        new_successors = []
 
-        while len(new_successors) < storageNode.k_succesors:
+        for successor in [storageNode.successor] + storageNode.successors:
+            if ping_node(successor[1], successor[2]):
+                new_successors.append(successor)
+                break
+
+        while len(new_successors) < storageNode.k_successors:
             ip, port = find_successor(new_successors[-1][0] + 1, new_successors[-1][1], new_successors[-1][2], True)
             new_successors.append((hash_function(getId(ip, port)), ip, port))
 
-        for new_succesor in set(new_successors) - set(storageNode.succesors):
+        for new_successor in new_successors:
             node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            node_socket.connect((new_succesor[1], new_succesor[2]))
+            node_socket.connect((new_successor[1], new_successor[2]))
             
-            print(f"Replicating in {new_succesor[1]}:{new_succesor[2]}")
+            print(f"Replicating in {new_successor[1]}:{new_successor[2]}")
             
             node_socket.sendall(f"RP".encode())
 
@@ -143,7 +188,7 @@ def check_successors(storageNode : StorageNode):
                             response = node_socket.recv(1024).decode().strip()
 
                             if (not response) or not response.startswith("220"):
-                                raise Exception(f"Something went wrong replicating {new_succesor[1]}:{new_succesor[2]} {key}")
+                                raise Exception(f"Something went wrong replicating {new_successor[1]}:{new_successor[2]} {key}")
 
                             print(f"Transfer complete {key}")
 
@@ -164,7 +209,7 @@ def check_successors(storageNode : StorageNode):
                             response = node_socket.recv(1024).decode().strip()
 
                             if (not response) or not response.startswith("220"):
-                                raise Exception(f"Something went wrong replicating {new_succesor[1]}:{new_succesor[2]} {key}")
+                                raise Exception(f"Something went wrong replicating {new_successor[1]}:{new_successor[2]} {key}")
 
                             print(f"Transfer complete {key}")
 
@@ -177,7 +222,8 @@ def check_successors(storageNode : StorageNode):
         while storageNode.reading_finger_table:
             pass
 
-        storageNode.succesors = new_successors
+        storageNode.successor = new_successors[0]
+        storageNode.successors = new_successors
 
         storageNode.updating = False
 
@@ -185,76 +231,13 @@ def check_successors(storageNode : StorageNode):
         storageNode.updating = False
         print(f"Error: {e}")
 
-def handle_rp_command(storageNode : StorageNode, client_socket):
-    try:
-        client_socket.send(f"220".encode())
-
-        while(True):
-            response = client_socket.recv(1024).decode().strip()
-
-            if response.startswith("Folder"):
-                args = response[7:].strip().split(" ")
-                
-                version = datetime.strptime(args[0], '%Y%m%d%H%M%S')
-                size = args[1]
-                path = " ".join(args[2:])
-
-                if path not in storageNode.data or storageNode.data[path][1] < version:
-                    client_socket.send(f"220".encode())
-                        
-                    data_json = ""
-
-                    count = 0
-                    while count < size:
-                        data = client_socket.recv(4096)
-                        data_json += data.decode()
-                        count += len(data)
-
-                    storageNode.data[path] = json.loads(data_json), version
-                    client_socket.send(f"220".encode())
-                    print(f"Transfer complete {path}")
-
-                else:
-                    client_socket.send(f"403".encode())
-
-            elif response.startswith("File"):
-                args = response[5:].strip().split(" ")
-                
-                version = datetime.strptime(args[0], '%Y%m%d%H%M%S')
-                size = args[1]
-                key = " ".join(args[2:])
-
-                if key not in storageNode.data or storageNode.data[key][1] < version:
-                    os.makedirs(os.path.dirname(key), exist_ok=True)
-
-                    with open(key, "wb") as file: # binary mode
-                        client_socket.send(f"220".encode())
-
-                        count = 0
-                        while count < size:
-                            data = client_socket.recv(4096)
-                            file.write(data)
-                            count += len(data)
-                        
-                        storageNode.data[key] = key, version
-                        client_socket.send(f"220".encode())
-                        print(f"Transfer complete {key}")
-
-                else:
-                    client_socket.send(f"403".encode())
-
-            elif response.startswith("226"):
-                break
-
-    except Exception as e:
-        print(f"Error: {e}")
 
 def update_finger_table(storageNode : StorageNode):
     try:
         new_finger_table_bigger = []
         new_finger_table_smaller = []
         
-        request_node_ip, request_node_port = storageNode.succesors[0][1], storageNode.succesors[0][2]
+        request_node_ip, request_node_port = storageNode.successors[0][1], storageNode.successors[0][2]
 
         for i in range(160):
             ip, port = find_successor(storageNode.identifier + 2 ** i, request_node_ip, request_node_port, True)
@@ -312,7 +295,7 @@ def request_join(storageNode : StorageNode, node_ip='127.0.0.1', node_port=50):
         response = node_socket.recv(1024).decode().strip()
 
         if response.startswith("220"):
-            storageNode.succesor = hash_function(getId(node_ip, node_port)), node_ip, node_port
+            storageNode.successor = hash_function(getId(node_ip, node_port)), node_ip, node_port
 
             predecessor_ip, predecessor_port = response[4:].split(":")
             predecessor_port = int(predecessor_port)
@@ -390,7 +373,7 @@ def request_join(storageNode : StorageNode, node_ip='127.0.0.1', node_port=50):
             update_finger_table(storageNode)
 
             print("---------------")
-            print(storageNode.succesors)
+            print(storageNode.successors)
             print("---------------")
             print(storageNode.finger_table_bigger)
             print(storageNode.finger_table_smaller)
@@ -406,6 +389,11 @@ def request_join(storageNode : StorageNode, node_ip='127.0.0.1', node_port=50):
         print(f"Error: {e}")
 
 def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
+    while storageNode.handling_join:
+        pass
+    
+    storageNode.handling_join = True
+
     join_node_id = hash_function(getId(ip, port))
 
     try:
@@ -462,10 +450,76 @@ def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
 
     except Exception as e:
         print(f"Error: {e}")
+
+    storageNode.handling_join = False
         
 def handle_ss_command(storageNode : StorageNode, ip, port, client_socket):
     new_successor_id = hash_function(getId(ip, port))
-    storageNode.succesor = new_successor_id, ip, port
+    storageNode.successor = new_successor_id, ip, port
+
+def handle_rp_command(storageNode : StorageNode, client_socket):
+    try:
+        client_socket.send(f"220".encode())
+
+        while(True):
+            response = client_socket.recv(1024).decode().strip()
+
+            if response.startswith("Folder"):
+                args = response[7:].strip().split(" ")
+                
+                version = datetime.strptime(args[0], '%Y%m%d%H%M%S')
+                size = args[1]
+                path = " ".join(args[2:])
+
+                if path not in storageNode.data or storageNode.data[path][1] < version:
+                    client_socket.send(f"220".encode())
+                        
+                    data_json = ""
+
+                    count = 0
+                    while count < size:
+                        data = client_socket.recv(4096)
+                        data_json += data.decode()
+                        count += len(data)
+
+                    storageNode.data[path] = json.loads(data_json), version
+                    client_socket.send(f"220".encode())
+                    print(f"Transfer complete {path}")
+
+                else:
+                    client_socket.send(f"403".encode())
+
+            elif response.startswith("File"):
+                args = response[5:].strip().split(" ")
+                
+                version = datetime.strptime(args[0], '%Y%m%d%H%M%S')
+                size = args[1]
+                key = " ".join(args[2:])
+
+                if key not in storageNode.data or storageNode.data[key][1] < version:
+                    os.makedirs(os.path.dirname(key), exist_ok=True)
+
+                    with open(key, "wb") as file: # binary mode
+                        client_socket.send(f"220".encode())
+
+                        count = 0
+                        while count < size:
+                            data = client_socket.recv(4096)
+                            file.write(data)
+                            count += len(data)
+                        
+                        storageNode.data[key] = key, version
+                        client_socket.send(f"220".encode())
+                        print(f"Transfer complete {key}")
+
+                else:
+                    client_socket.send(f"403".encode())
+
+            elif response.startswith("226"):
+                break
+
+    except Exception as e:
+        print(f"Error: {e}")
 
 def handle_list_command(storageNode : StorageNode, key, client_socket):
     if key in storageNode.data:
@@ -625,7 +679,10 @@ def handle_client(storageNode, client_socket):
         command = client_socket.recv(1024).decode().strip()
         print(f"Received command: {command}")
 
-        if command.startswith('GS'):
+        if command.startswith('PING'):
+            handle_ping_command(client_socket)
+
+        elif command.startswith('GS'):
             key = command[3:].strip()
             handle_gs_command(storageNode, int(key), client_socket)
 

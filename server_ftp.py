@@ -268,29 +268,39 @@ def handle_retr_command(filename, client_socket, data_socket, current_dir, node_
                 try:
                     data = node_socket.recv(4096)
                 except:
+                    if len(aux_nodes) == 0:
+                        node_socket.close()
+                        client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
+                        return
+
                     while len(aux_nodes) > 0:
                         node_socket.close()
 
                         ip, port = aux_nodes.pop(0)
 
                         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                        node_socket.connect((ip, port))
 
-                        print(f"Aux-connected to {ip}:{port}")
-        
-                        node_socket.sendall(f"RETR {count} {file_path}".encode())
-                        response = node_socket.recv(1024).decode().strip()
+                        try:
+                            node_socket.connect((ip, port))
 
-                        if response.startswith("220"):
-                            args = response[4:].strip().split(" ")
-                            aux_nodes += [(address.split(":")[0], int(address.split(":")[1])) for address in args[1:]] if len(args) > 1 else []
-                            
-                            node_socket.send(b"220 Ok")
-                            break
+                            print(f"Aux-connected to {ip}:{port}")
+            
+                            node_socket.sendall(f"RETR {count} {file_path}".encode())
+                            response = node_socket.recv(1024).decode().strip()
 
-                        elif response.startswith("550"):
-                            ip, port = response.split(" ")[1].split(":")
-                            aux_nodes.append((ip, int(port)))
+                            if response.startswith("220"):
+                                args = response[4:].strip().split(" ")
+                                aux_nodes += [(address.split(":")[0], int(address.split(":")[1])) for address in args[1:]] if len(args) > 1 else []
+                                
+                                node_socket.send(b"220 Ok")
+                                break
+
+                            elif response.startswith("550"):
+                                ip, port = response.split(" ")[1].split(":")
+                                aux_nodes.append((ip, int(port)))
+
+                        except:
+                            pass
 
                     continue
 
