@@ -217,8 +217,17 @@ def check_successors(storageNode : StorageNode):
         while storageNode.reading_finger_table:
             pass
 
+        if len(storageNode.successors) > 0 and storageNode.successors[0][0] != new_successors[0][0]:
+            node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            node_socket.connect((new_successors[1], new_successors[2]))
+
+            print(f"Notify Successor {new_successors[1]}:{new_successors[2]}")
+            
+            node_socket.sendall(f"SP {storageNode.host}:{storageNode.port}".encode())
+            node_socket.close()
+
         storageNode.successor = new_successors[0]
-        storageNode.successors = new_successors
+        storageNode.successors = new_successors  
 
         storageNode.updating = False
 
@@ -285,9 +294,19 @@ def update_finger_table(storageNode : StorageNode):
 
 
 def update(storageNode : StorageNode):
-    #while not storageNode.stop_update:
-        if check_successors(storageNode) and update_finger_table(storageNode):
-            time.sleep(10)
+    while not storageNode.stop_update:
+        
+        while storageNode.handling_join:
+            pass
+        
+        storageNode.handling_join = True
+
+        check_successors(storageNode)
+        update_finger_table(storageNode)
+        
+        storageNode.handling_join = False
+
+        time.sleep(30)
         
 
 def request_join(storageNode : StorageNode, node_ip='127.0.0.1', node_port=50):
@@ -470,6 +489,24 @@ def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
 def handle_ss_command(storageNode : StorageNode, ip, port, client_socket):
     new_successor_id = hash_function(getId(ip, port))
     storageNode.successor = new_successor_id, ip, port
+
+def handle_sp_command(storageNode : StorageNode, ip, port, client_socket):
+    while storageNode.handling_join:
+        pass
+    
+    storageNode.handling_join = True
+
+    new_predecessor_id = hash_function(getId(ip, port))
+    
+    if (storageNode.identifier < storageNode.predecessor[0] and (storageNode.predecessor[0] < new_predecessor_id or new_predecessor_id < storageNode.identifier)) or (storageNode.predecessor[0] < new_predecessor_id and new_predecessor_id < storageNode.identifier):
+        storageNode.predecessor = new_predecessor_id, ip, port
+
+    else:
+        if not ping_node(storageNode.predecessor[1], storageNode.predecessor[2]):
+            storageNode.predecessor = new_predecessor_id, ip, port
+
+    storageNode.handling_join = False
+
 
 def handle_rp_command(storageNode : StorageNode, client_socket):
     try:
@@ -706,6 +743,10 @@ def handle_client(storageNode, client_socket):
         elif command.startswith('SS'):
             ip, port = command[3:].strip().split(":")
             handle_ss_command(storageNode, ip, int(port), client_socket)
+
+        elif command.startswith('SP'):
+            ip, port = command[3:].strip().split(":")
+            handle_sp_command(storageNode, ip, int(port), client_socket)
 
         elif command.startswith('JOIN'):
             ip, port = command[5:].strip().split(":")
