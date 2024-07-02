@@ -34,7 +34,7 @@ class StorageNode:
         self.successors = []
         self.successor = None
         self.k_successors = 3
-        self.reading_finger_table = False
+        self.reading = False
         self.updating = False
         self.handling_join = False
         self.update_thread = threading.Thread(target=update, args=(self,))
@@ -53,7 +53,7 @@ def find_table_successor(storageNode : StorageNode, id):
     while storageNode.updating:
         pass
 
-    storageNode.reading_finger_table = True
+    storageNode.reading = True
 
     if len(storageNode.finger_table_bigger) == 0 and len(storageNode.finger_table_smaller) == 0:
         result = storageNode.successor[1], storageNode.successor[2]
@@ -71,21 +71,27 @@ def find_table_successor(storageNode : StorageNode, id):
         index = len(storageNode.finger_table_bigger) - 1
         result = (storageNode.finger_table_bigger[index][1], storageNode.finger_table_bigger[index][2])
 
-    storageNode.reading_finger_table = False
+    storageNode.reading = False
     return result
 
 
-def get_k_successors(node : StorageNode):
-    k = node.k_successors
+def get_k_successors(storageNode : StorageNode):
+    k = storageNode.k_successors
     result = []
 
-    for _, ip, port in node.successors:
+    while storageNode.updating:
+        pass
+
+    storageNode.reading = True
+
+    for _, ip, port in storageNode.successors:
         if k > 0:
             result.append(f"{ip}:{port}") 
             k -= 1
         else:
             break
 
+    storageNode.reading = False
     return result
 
 def handle_gs_command(storageNode : StorageNode, id_key, client_socket):
@@ -214,7 +220,7 @@ def check_successors(storageNode : StorageNode):
 
         storageNode.updating = True
 
-        while storageNode.reading_finger_table:
+        while storageNode.reading:
             pass
 
         if len(storageNode.successors) > 0 and storageNode.successors[0][0] != new_successors[0][0]:
@@ -277,7 +283,7 @@ def update_finger_table(storageNode : StorageNode):
 
         storageNode.updating = True
 
-        while storageNode.reading_finger_table:
+        while storageNode.reading:
             pass
 
         storageNode.finger_table_bigger = new_finger_table_bigger

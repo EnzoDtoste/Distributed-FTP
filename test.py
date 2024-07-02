@@ -4,7 +4,7 @@ import time
 import datetime
 
 def main():
-    nodes = [StorageNode(port = i) for i in range(50, 200, 2)]
+    nodes = [StorageNode(port = i) for i in range(50, 56, 2)]
     nodes.sort(key = lambda sn: sn.identifier)
 
     def get_closest_up(id):
