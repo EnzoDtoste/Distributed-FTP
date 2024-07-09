@@ -223,7 +223,7 @@ def check_successors(storageNode : StorageNode):
         while storageNode.reading_count > 0:
             pass
 
-        if len(storageNode.successors) > 0 and storageNode.successors[0][0] != new_successors[0][0]:
+        if len(storageNode.successors) > 0 and new_successors[0][0] > 0 :
             node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             node_socket.connect((new_successors[1], new_successors[2]))
 
