@@ -1,20 +1,15 @@
-# Usa la imagen oficial de Python
-FROM python:3.9-slim
+# Usa la imagen base oficial de Python
+FROM python:3.11
 
 # Establece el directorio de trabajo en el contenedor
 WORKDIR /app
 
-# Copia el archivo requirements.txt al directorio de trabajo
-COPY requirements.txt .
 
-# Instala las dependencias necesarias
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copia el resto del código de la aplicación
+# Copia el código de la aplicación en el contenedor
 COPY . .
 
-# Expone el puerto que utiliza la aplicación
-EXPOSE 50
+# Expone el puerto que usará el servidor (ajústalo según sea necesario)
+EXPOSE 205
 
-# Comando para ejecutar la aplicación
-CMD ["python", "server_ftp.py"]
+# Define el comando por defecto para ejecutar el servidor
+CMD ["python", "test.py"]
