@@ -8,8 +8,8 @@ WORKDIR /app
 # Copia el código de la aplicación en el contenedor
 COPY . .
 
-# Expone el puerto que usará el servidor (ajústalo según sea necesario)
-EXPOSE 205
+# Expone el puerto que usará el servidor
+EXPOSE 21
 
 # Define el comando por defecto para ejecutar el servidor
 CMD ["python", "test.py"]
