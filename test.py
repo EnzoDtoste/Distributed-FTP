@@ -1,4 +1,5 @@
-from storage_node import StorageNode, accept_connections_async, hash_function, request_join
+from storage_node import StorageNode, accept_connections_async, request_join
+from utils import hash_function
 import os
 import time
 import datetime
@@ -53,11 +54,14 @@ def main():
             successor = get_closest_up(successor_id)
             successor.data[key] = (value, time)
 
-
-    root_path = os.path.normpath("/[Cine Clasico] Red Planet (2000) DUAL")
     
-    entries = os.listdir(root_path)
-        
+    try:
+        root_path = os.path.normpath("/[Cine Clasico] Red Planet (2000) DUAL")
+        entries = os.listdir(root_path)
+    except:
+        root_path = os.path.normpath("/app")
+        entries = os.listdir(root_path)
+
     inner_dirs = {}
     for entry in entries:
         try:
@@ -149,12 +153,12 @@ def main():
     #     print(node.identifier)
     #     print('---------------')
 
-    new_node = StorageNode(port = 205)
+    # new_node = StorageNode(port = 205)
 
     while True:
-        input()
-
-        request_join(new_node)
+        #input()
+        pass
+        #request_join(new_node)
 
 if __name__ == "__main__":
     main()

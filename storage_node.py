@@ -5,28 +5,22 @@ import hashlib
 import json
 from datetime import datetime
 import time
+from utils import hash_function, getId, find_successor, get_host_ip
 
-def hash_function(key):
-    """ Retorna un hash entero de 160 bits del input key """
-    return int(hashlib.sha1(key.encode('utf-8')).hexdigest(), 16)
-
-
-def setup_control_socket(host='127.0.0.1', port=50):
+def setup_control_socket(port=50):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind((host, port))
+    server_socket.bind(('0.0.0.0', port))
     server_socket.listen(5)
-    print(f"Listening on {host}:{port}")
+    ip = get_host_ip()
+    print(f"Listening on {ip}:{port}")
     return server_socket
 
-def getId(host, port):
-    return host + ':' + str(port)
-
 class StorageNode:
-    def __init__(self, host='127.0.0.1', port=50, setup_socket=True):
-        self.host = host
+    def __init__(self, port=50, setup_socket=True):
+        self.socket = setup_control_socket(port) if setup_socket else None
+        self.host = get_host_ip()
         self.port = port
-        self.identifier = hash_function(getId(host, port))
-        self.socket = setup_control_socket(host, port) if setup_socket else None
+        self.identifier = hash_function(getId(self.host, self.port))
         self.data = {}
         self.finger_table_bigger = []
         self.finger_table_smaller = []
@@ -100,28 +94,6 @@ def handle_gs_command(storageNode : StorageNode, id_key, client_socket):
     else:
         ip, port = find_table_successor(storageNode, id_key)
         client_socket.send(f"550 {ip}:{port}".encode())
-
-def find_successor(id_key, node_ip='127.0.0.1', node_port=50, hash = False):
-    if not hash:
-        id_key = hash_function(id_key)
-    
-    node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    node_socket.connect((node_ip, node_port))
-
-    print(f"Connected to {node_ip}:{node_port}")
-    
-    node_socket.sendall(f"GS {id_key}".encode())
-
-    response = node_socket.recv(1024).decode().strip()
-
-    if response.startswith("220"):
-        node_socket.close()
-        return node_ip, node_port
-    
-    ip, port = response.split(" ")[1].split(":")
-    node_socket.close()
-        
-    return find_successor(id_key, ip, int(port), True)
 
 
 def ping_node(node_ip, node_port):
@@ -223,14 +195,13 @@ def check_successors(storageNode : StorageNode):
         while storageNode.reading_count > 0:
             pass
 
-        if len(storageNode.successors) > 0 and new_successors[0][0] > 0 :
-            node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            node_socket.connect((new_successors[1], new_successors[2]))
+        node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        node_socket.connect((new_successors[0][1], new_successors[0][2]))
 
-            print(f"Notify Successor {new_successors[1]}:{new_successors[2]}")
-            
-            node_socket.sendall(f"SP {storageNode.host}:{storageNode.port}".encode())
-            node_socket.close()
+        print(f"Notify Successor {new_successors[0][1]}:{new_successors[0][2]}")
+        
+        node_socket.sendall(f"SP {storageNode.host}:{storageNode.port}".encode())
+        node_socket.close()
 
         storageNode.successor = new_successors[0]
         storageNode.successors = new_successors  
@@ -436,56 +407,61 @@ def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
     join_node_id = hash_function(getId(ip, port))
 
     try:
-        client_socket.send(f"220 {storageNode.predecessor[1]}:{storageNode.predecessor[2]}".encode())
+        if join_node_id > storageNode.predecessor[0] and (storageNode.identifier < storageNode.predecessor[0] or join_node_id < storageNode.identifier):
 
-        response = client_socket.recv(1024).decode().strip()
+            client_socket.send(f"220 {storageNode.predecessor[1]}:{storageNode.predecessor[2]}".encode())
 
-        if response.startswith("220"):
-            for key, value in storageNode.data.items():
-                id_key = hash_function(key)
+            response = client_socket.recv(1024).decode().strip()
 
-                if (storageNode.predecessor[0] > join_node_id and (id_key <= join_node_id or id_key > storageNode.predecessor[0])) or (storageNode.predecessor[0] < id_key and id_key <= join_node_id):
-                    if isinstance(value[0], dict):
-                        
-                        data = f"{json.dumps(value[0])}".encode()
-                        client_socket.sendall(f"Folder {value[1].strftime('%Y%m%d%H%M%S%f')} {len(data)} {key}".encode())
+            if response.startswith("220"):
+                for key, value in storageNode.data.items():
+                    id_key = hash_function(key)
 
-                        response = client_socket.recv(1024).decode().strip()
-
-                        if response.startswith("220"):
-                            client_socket.sendall(data)
+                    if (storageNode.predecessor[0] > join_node_id and (id_key <= join_node_id or id_key > storageNode.predecessor[0])) or (storageNode.predecessor[0] < id_key and id_key <= join_node_id):
+                        if isinstance(value[0], dict):
+                            
+                            data = f"{json.dumps(value[0])}".encode()
+                            client_socket.sendall(f"Folder {value[1].strftime('%Y%m%d%H%M%S%f')} {len(data)} {key}".encode())
 
                             response = client_socket.recv(1024).decode().strip()
 
-                            if (not response) or not response.startswith("220"):
-                                raise Exception(f"Something went wrong sending data {ip}:{port} {key}")
+                            if response.startswith("220"):
+                                client_socket.sendall(data)
 
-                            print(f"Transfer complete {key}")
+                                response = client_socket.recv(1024).decode().strip()
 
-                    else:
-                        client_socket.sendall(f"File {value[1].strftime('%Y%m%d%H%M%S%f')} {os.stat(value[0]).st_size} {key}".encode())
+                                if (not response) or not response.startswith("220"):
+                                    raise Exception(f"Something went wrong sending data {ip}:{port} {key}")
 
-                        response = client_socket.recv(1024).decode().strip()
+                                print(f"Transfer complete {key}")
 
-                        if response.startswith("220"):
-                            with open(value[0], "rb") as file:
-                                data = file.read(4096)
-                                count = 0
-                                while data:
-                                    client_socket.sendall(data)
-                                    count += len(data)
+                        else:
+                            client_socket.sendall(f"File {value[1].strftime('%Y%m%d%H%M%S%f')} {os.stat(value[0]).st_size} {key}".encode())
+
+                            response = client_socket.recv(1024).decode().strip()
+
+                            if response.startswith("220"):
+                                with open(value[0], "rb") as file:
                                     data = file.read(4096)
+                                    count = 0
+                                    while data:
+                                        client_socket.sendall(data)
+                                        count += len(data)
+                                        data = file.read(4096)
 
-                            response = client_socket.recv(1024).decode().strip()
+                                response = client_socket.recv(1024).decode().strip()
 
-                            if (not response) or not response.startswith("220"):
-                                raise Exception(f"Something went wrong replicating {ip}:{port} {key}")
+                                if (not response) or not response.startswith("220"):
+                                    raise Exception(f"Something went wrong replicating {ip}:{port} {key}")
 
-                            print(f"Transfer complete {key}")
+                                print(f"Transfer complete {key}")
 
-            client_socket.send(b"226 Transfer complete.\r\n")
+                client_socket.send(b"226 Transfer complete.\r\n")
 
-            storageNode.predecessor = join_node_id, ip, port
+                storageNode.predecessor = join_node_id, ip, port
+
+            else:
+                client_socket.send(f"550 {storageNode.predecessor[1]}:{storageNode.predecessor[2]}".encode())
 
     except Exception as e:
         print(f"Error: {e}")
@@ -583,7 +559,7 @@ def handle_list_command(storageNode : StorageNode, key, client_socket):
         dirs = storageNode.data[key][0]
 
         try:
-            client_socket.send(f"220".encode())
+            client_socket.send(f"220 {' '.join(get_k_successors(storageNode))}".encode())
             response = client_socket.recv(1024).decode().strip()
 
             if response.startswith("220"):
@@ -618,7 +594,8 @@ def handle_rmd_command(storageNode : StorageNode, key, client_socket):
             folders = [folder for folder, info in dirs.items() if info.startswith('drwxr-xr-x')]
             files = [file for file, info in dirs.items() if info.startswith('-rw-r--r--')]
 
-            client_socket.send(f"220 {"\n".join([str(len(folders))] + folders + files)}".encode())
+            directories = '\n'.join([str(len(folders))] + folders + files)
+            client_socket.send(f"220 {directories}".encode())
 
         except Exception as e:
             print(f"Error: {e}")
@@ -669,7 +646,7 @@ def handle_retr_command(storageNode : StorageNode, key, idx, client_socket):
                 size = os.stat(path).st_size
                 print(f"File size: {size} bytes")
 
-                client_socket.send(f"220 {size} {" ".join(get_k_successors(storageNode))}".encode())
+                client_socket.send(f"220 {size} {' '.join(get_k_successors(storageNode))}".encode())
 
                 response = client_socket.recv(1024).decode().strip()
 

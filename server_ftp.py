@@ -2,7 +2,8 @@ import socket
 import threading
 import os
 from datetime import datetime
-from storage_node import find_successor
+from utils import find_successor
+import random
 
 def setup_control_socket(host='0.0.0.0', port=21):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -11,15 +12,24 @@ def setup_control_socket(host='0.0.0.0', port=21):
     print(f"Listening on {host}:{port}")
     return server_socket
 
-def handle_pasv_command(client_socket):
-    data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    # Assign any port free
-    data_socket.bind(('', 0))
+def handle_pasv_command(client_socket, port_range=(8000, 8100)):
+    for port in random.sample(range(*port_range), port_range[1] - port_range[0]):
+        try:
+            data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            data_socket.bind(('0.0.0.0', port))
+            break
+        except OSError:
+            continue
+    
+    else:
+        raise IOError("No ports available in the range specified")
+    
     data_socket.listen(1)
     port = data_socket.getsockname()[1]
-    
+    print(port)
+
     # Inform the client about the connection port
-    ip = client_socket.getsockname()[0].replace('.', ',')
+    ip = '127,0,0,1'#client_socket.getsockname()[0].replace('.', ',')
     p1, p2 = divmod(port, 256)  # Calculate port bytes
     response = f"227 Entering Passive Mode ({ip},{p1},{p2}).\r\n"
     client_socket.send(response.encode('utf-8'))
@@ -39,7 +49,7 @@ def handle_port_command(command, client_socket):
     data_socket.connect((ip_address, port))
     return data_socket
 
-def send_directory_listing(client_socket, data_socket, current_dir, node_ip='127.0.0.1', node_port=50):
+def send_directory_listing(client_socket, data_socket, current_dir, node_ip='172.17.0.2', node_port=50):
     try:
         node_ip, node_port = find_successor(current_dir, node_ip, node_port)
         
@@ -55,12 +65,55 @@ def send_directory_listing(client_socket, data_socket, current_dir, node_ip='127
         if response.startswith("220"):
             client_socket.send(b"150 Here comes the directory listing.\r\n")
 
+            addresses = response[4:].split(" ") if len(response) > 4 else []
+            aux_nodes = [(address.split(":")[0], int(address.split(":")[1])) for address in addresses]
+
             node_socket.send(b"220 Ok")
 
             data = ""
 
             while True:
-                chunck = node_socket.recv(4096).decode('utf-8')
+                try:
+                    chunck = node_socket.recv(4096).decode('utf-8')
+                except:
+                    if len(aux_nodes) == 0:
+                        node_socket.close()
+                        client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
+                        return
+
+                    while len(aux_nodes) > 0:
+                        node_socket.close()
+
+                        ip, port = aux_nodes.pop(0)
+
+                        node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+                        try:
+                            node_socket.connect((ip, port))
+
+                            print(f"Aux-connected to {ip}:{port}")
+            
+                            node_socket.sendall(f"LIST {current_dir}".encode())
+                            response = node_socket.recv(1024).decode().strip()
+
+                            if response.startswith("220"):
+                                addresses = response[4:].split(" ") if len(response) > 4 else []
+                                aux_nodes += [(address.split(":")[0], int(address.split(":")[1])) for address in addresses]
+                                
+                                node_socket.send(b"220 Ok")
+
+                                data = ""
+                                break
+
+                            elif response.startswith("550"):
+                                ip, port = response.split(" ")[1].split(":")
+                                aux_nodes.append((ip, int(port)))
+
+                        except:
+                            pass
+
+                    continue
+
 
                 if chunck:
                     data += chunck
@@ -87,7 +140,7 @@ def send_directory_listing(client_socket, data_socket, current_dir, node_ip='127
         client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
 
-def send_stor_dir_command(dirname, info, current_dir, node_ip='127.0.0.1', node_port=50):
+def send_stor_dir_command(dirname, info, current_dir, node_ip='172.17.0.2', node_port=50):
     dir_path = os.path.normpath(os.path.join(current_dir, dirname))
 
     try:
@@ -118,7 +171,7 @@ def send_stor_dir_command(dirname, info, current_dir, node_ip='127.0.0.1', node_
         print(f"Error: {e}")
         return False
     
-def send_dele_dir_command(dirname, current_dir, node_ip='127.0.0.1', node_port=50):
+def send_dele_dir_command(dirname, current_dir, node_ip='172.17.0.2', node_port=50):
     dir_path = os.path.normpath(os.path.join(current_dir, dirname))
 
     try:
@@ -149,7 +202,7 @@ def send_dele_dir_command(dirname, current_dir, node_ip='127.0.0.1', node_port=5
         print(f"Error: {e}")
         return False
 
-def handle_mkd_command(dirname, client_socket, current_dir, node_ip='127.0.0.1', node_port=50):
+def handle_mkd_command(dirname, client_socket, current_dir, node_ip='172.17.0.2', node_port=50):
     new_dir_path = os.path.normpath(os.path.join(current_dir, dirname))
 
     try:
@@ -167,7 +220,7 @@ def handle_mkd_command(dirname, client_socket, current_dir, node_ip='127.0.0.1',
         if response.startswith("220"):
             node_socket.close()
 
-            if send_stor_dir_command(dirname, f"drwxr-xr-x 1 0 0 0 {datetime.now().strftime("%b %d %H:%M")} {os.path.basename(dirname)}", current_dir):
+            if send_stor_dir_command(dirname, f"drwxr-xr-x 1 0 0 0 {datetime.now().strftime('%b %d %H:%M')} {os.path.basename(dirname)}", current_dir):
                 client_socket.send(f'257 "{new_dir_path}" created.\r\n'.encode())
             else:
                 client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
@@ -186,7 +239,7 @@ def handle_mkd_command(dirname, client_socket, current_dir, node_ip='127.0.0.1',
         client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
 
-def handle_rmd_command(dirname, client_socket, current_dir, node_ip='127.0.0.1', node_port=50):
+def handle_rmd_command(dirname, client_socket, current_dir, node_ip='172.17.0.2', node_port=50):
     dir_path = os.path.normpath(os.path.join(current_dir, dirname))
 
     try:
@@ -237,7 +290,7 @@ def handle_rmd_command(dirname, client_socket, current_dir, node_ip='127.0.0.1',
             client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
 
-def handle_retr_command(filename, client_socket, data_socket, current_dir, node_ip='127.0.0.1', node_port=50):
+def handle_retr_command(filename, client_socket, data_socket, current_dir, node_ip='172.17.0.2', node_port=50):
     file_path = os.path.join(current_dir, filename)
     
     try:
@@ -326,7 +379,7 @@ def handle_retr_command(filename, client_socket, data_socket, current_dir, node_
         client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
 
-def handle_stor_command(filename, client_socket, data_socket, current_dir, node_ip='127.0.0.1', node_port=50):
+def handle_stor_command(filename, client_socket, data_socket, current_dir, node_ip='172.17.0.2', node_port=50):
     file_path = os.path.join(current_dir, filename)
     
     try:
@@ -358,7 +411,7 @@ def handle_stor_command(filename, client_socket, data_socket, current_dir, node_
             
             node_socket.close()
 
-            if send_stor_dir_command(filename, f"-rw-r--r-- 1 0 0 {count} {datetime.now().strftime("%b %d %H:%M")} {os.path.basename(filename)}", current_dir):
+            if send_stor_dir_command(filename, f"-rw-r--r-- 1 0 0 {count} {datetime.now().strftime('%b %d %H:%M')} {os.path.basename(filename)}", current_dir):
                 client_socket.send(b"226 Transfer complete.\r\n")
             else:
                 client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
@@ -373,7 +426,7 @@ def handle_stor_command(filename, client_socket, data_socket, current_dir, node_
         print(f"Error: {e}")
         client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
-def handle_dele_command(filename, client_socket, current_dir, node_ip='127.0.0.1', node_port=50):
+def handle_dele_command(filename, client_socket, current_dir, node_ip='172.17.0.2', node_port=50):
     file_path = os.path.join(current_dir, filename)
     
     try:
@@ -412,7 +465,7 @@ def handle_dele_command(filename, client_socket, current_dir, node_ip='127.0.0.1
 
 
 def handle_client(client_socket):
-    current_dir = os.path.normpath("/[Cine Clasico] Red Planet (2000) DUAL")  # Working directory
+    current_dir = os.path.normpath("/app")  # Working directory
     data_socket = None
 
     try:
@@ -472,7 +525,10 @@ def handle_client(client_socket):
 
             elif command.startswith('CWD'):
                 new_path = os.path.normpath(command[4:].strip())
-                current_dir = os.path.normpath(os.path.join(current_dir, new_path))
+                
+                if current_dir != os.path.normpath("/app") or new_path != "..":
+                    current_dir = os.path.normpath(os.path.join(current_dir, new_path))
+
                 client_socket.send(b'250 Directory successfully changed.\r\n')
 
             elif command.startswith('RETR'):
