@@ -156,8 +156,7 @@ def main():
     # new_node = StorageNode(port = 205)
 
     while True:
-        #input()
-        pass
+        input()
         #request_join(new_node)
 
 if __name__ == "__main__":

@@ -24,6 +24,7 @@ def get_storage_node():
         index_indexes = random.randrange(0, len(indexes), 1)
 
         if ping_node(*storage_nodes[indexes[index_indexes]]):
+            reading_list_storage_nodes -= 1
             return storage_nodes[indexes[index_indexes]]
 
         else:
