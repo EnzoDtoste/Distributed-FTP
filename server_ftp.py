@@ -2,8 +2,75 @@ import socket
 import threading
 import os
 from datetime import datetime
-from utils import find_successor
+from utils import find_successor, ping_node
 import random
+import time
+
+storage_nodes = [('172.17.0.2', 50)]
+updating_list_storage_nodes = False
+reading_list_storage_nodes = 0
+
+def get_storage_node():
+    global storage_nodes, updating_list_storage_nodes, reading_list_storage_nodes
+
+    while updating_list_storage_nodes:
+        pass
+
+    reading_list_storage_nodes += 1
+
+    indexes = range(len(storage_nodes))
+    
+    while len(indexes) > 0:
+        index_indexes = random.randrange(0, len(indexes), 1)
+
+        if ping_node(*storage_nodes[indexes[index_indexes]]):
+            return storage_nodes[indexes[index_indexes]]
+
+        else:
+            indexes.pop(index_indexes)
+
+    reading_list_storage_nodes -= 1
+
+
+def update_list_storage_nodes():
+    global storage_nodes, updating_list_storage_nodes, reading_list_storage_nodes
+
+    while True:
+        new_storage_nodes = set()
+
+        for ip, port in storage_nodes:
+            node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            
+            try:    
+                node_socket.connect((ip, port))
+
+                node_socket.sendall(f"GK".encode())
+                response = node_socket.recv(1024).decode().strip()
+
+                if response.startswith("220"):
+                    new_storage_nodes.add((ip, port))
+
+                    for address in response.split(" ")[1:]:
+                        new_storage_nodes.add((address.split(":")[0], int(address.split(":")[1])))
+            except:
+                pass
+
+            finally:
+                node_socket.close()
+
+        if len(new_storage_nodes) > 0:
+            updating_list_storage_nodes = True
+
+            while reading_list_storage_nodes > 0:
+                pass
+
+            storage_nodes = list(new_storage_nodes)
+            print(storage_nodes)
+
+            updating_list_storage_nodes = False
+
+        time.sleep(15)
+
 
 def setup_control_socket(host='0.0.0.0', port=21):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -12,7 +79,7 @@ def setup_control_socket(host='0.0.0.0', port=21):
     print(f"Listening on {host}:{port}")
     return server_socket
 
-def handle_pasv_command(client_socket, port_range=(8000, 8100)):
+def handle_pasv_command(client_socket, port_range=(50000, 50100)):
     for port in random.sample(range(*port_range), port_range[1] - port_range[0]):
         try:
             data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -49,10 +116,17 @@ def handle_port_command(command, client_socket):
     data_socket.connect((ip_address, port))
     return data_socket
 
-def send_directory_listing(client_socket, data_socket, current_dir, node_ip='172.17.0.2', node_port=50):
+def send_directory_listing(client_socket, data_socket, current_dir, node_ip=None, node_port=None):
     try:
-        node_ip, node_port = find_successor(current_dir, node_ip, node_port)
-        
+        while node_ip is None or node_port is None:
+            node_ip, node_port = get_storage_node()
+
+        try:
+            node_ip, node_port = find_successor(current_dir, node_ip, node_port)
+        except:
+            send_directory_listing(client_socket, data_socket, current_dir)
+            return
+
         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         node_socket.connect((node_ip, node_port))
         
@@ -140,11 +214,17 @@ def send_directory_listing(client_socket, data_socket, current_dir, node_ip='172
         client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
 
-def send_stor_dir_command(dirname, info, current_dir, node_ip='172.17.0.2', node_port=50):
+def send_stor_dir_command(dirname, info, current_dir, node_ip=None, node_port=None):
     dir_path = os.path.normpath(os.path.join(current_dir, dirname))
 
     try:
-        node_ip, node_port = find_successor(current_dir, node_ip, node_port)
+        while node_ip is None or node_port is None:
+            node_ip, node_port = get_storage_node()
+
+        try:
+            node_ip, node_port = find_successor(current_dir, node_ip, node_port)
+        except:
+            return send_stor_dir_command(dirname, info, current_dir)
 
         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         node_socket.connect((node_ip, node_port))
@@ -171,11 +251,17 @@ def send_stor_dir_command(dirname, info, current_dir, node_ip='172.17.0.2', node
         print(f"Error: {e}")
         return False
     
-def send_dele_dir_command(dirname, current_dir, node_ip='172.17.0.2', node_port=50):
+def send_dele_dir_command(dirname, current_dir, node_ip=None, node_port=None):
     dir_path = os.path.normpath(os.path.join(current_dir, dirname))
 
     try:
-        node_ip, node_port = find_successor(current_dir, node_ip, node_port)
+        while node_ip is None or node_port is None:
+            node_ip, node_port = get_storage_node()
+
+        try:
+            node_ip, node_port = find_successor(current_dir, node_ip, node_port)
+        except:
+            return send_dele_dir_command(dirname, current_dir)
 
         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         node_socket.connect((node_ip, node_port))
@@ -202,11 +288,18 @@ def send_dele_dir_command(dirname, current_dir, node_ip='172.17.0.2', node_port=
         print(f"Error: {e}")
         return False
 
-def handle_mkd_command(dirname, client_socket, current_dir, node_ip='172.17.0.2', node_port=50):
+def handle_mkd_command(dirname, client_socket, current_dir, node_ip=None, node_port=None):
     new_dir_path = os.path.normpath(os.path.join(current_dir, dirname))
 
     try:
-        node_ip, node_port = find_successor(new_dir_path, node_ip, node_port)
+        while node_ip is None or node_port is None:
+            node_ip, node_port = get_storage_node()
+
+        try:
+            node_ip, node_port = find_successor(new_dir_path, node_ip, node_port)
+        except:
+            handle_mkd_command(dirname, client_socket, current_dir)
+            return
 
         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         node_socket.connect((node_ip, node_port))
@@ -239,11 +332,18 @@ def handle_mkd_command(dirname, client_socket, current_dir, node_ip='172.17.0.2'
         client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
 
-def handle_rmd_command(dirname, client_socket, current_dir, node_ip='172.17.0.2', node_port=50):
+def handle_rmd_command(dirname, client_socket, current_dir, node_ip=None, node_port=None):
     dir_path = os.path.normpath(os.path.join(current_dir, dirname))
 
     try:
-        node_ip, node_port = find_successor(dir_path, node_ip, node_port)
+        while node_ip is None or node_port is None:
+            node_ip, node_port = get_storage_node()
+
+        try:
+            node_ip, node_port = find_successor(dir_path, node_ip, node_port)
+        except:
+            handle_rmd_command(dirname, client_socket, current_dir)
+            return
 
         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         node_socket.connect((node_ip, node_port))
@@ -290,11 +390,18 @@ def handle_rmd_command(dirname, client_socket, current_dir, node_ip='172.17.0.2'
             client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
 
-def handle_retr_command(filename, client_socket, data_socket, current_dir, node_ip='172.17.0.2', node_port=50):
+def handle_retr_command(filename, client_socket, data_socket, current_dir, node_ip=None, node_port=None):
     file_path = os.path.join(current_dir, filename)
     
     try:
-        node_ip, node_port = find_successor(file_path, node_ip, node_port)
+        while node_ip is None or node_port is None:
+            node_ip, node_port = get_storage_node()
+
+        try:
+            node_ip, node_port = find_successor(file_path, node_ip, node_port)
+        except:
+            handle_retr_command(filename, client_socket, data_socket, current_dir)
+            return
 
         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         node_socket.connect((node_ip, node_port))
@@ -379,11 +486,18 @@ def handle_retr_command(filename, client_socket, data_socket, current_dir, node_
         client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
 
-def handle_stor_command(filename, client_socket, data_socket, current_dir, node_ip='172.17.0.2', node_port=50):
+def handle_stor_command(filename, client_socket, data_socket, current_dir, node_ip=None, node_port=None):
     file_path = os.path.join(current_dir, filename)
     
     try:
-        node_ip, node_port = find_successor(file_path, node_ip, node_port)
+        while node_ip is None or node_port is None:
+            node_ip, node_port = get_storage_node()
+
+        try:
+            node_ip, node_port = find_successor(file_path, node_ip, node_port)
+        except:
+            handle_stor_command(filename, client_socket, data_socket, current_dir)
+            return
 
         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         node_socket.connect((node_ip, node_port))
@@ -426,11 +540,18 @@ def handle_stor_command(filename, client_socket, data_socket, current_dir, node_
         print(f"Error: {e}")
         client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
-def handle_dele_command(filename, client_socket, current_dir, node_ip='172.17.0.2', node_port=50):
+def handle_dele_command(filename, client_socket, current_dir, node_ip=None, node_port=None):
     file_path = os.path.join(current_dir, filename)
     
     try:
-        node_ip, node_port = find_successor(file_path, node_ip, node_port)
+        while node_ip is None or node_port is None:
+            node_ip, node_port = get_storage_node()
+
+        try:
+            node_ip, node_port = find_successor(file_path, node_ip, node_port)
+        except:
+            handle_dele_command(filename, client_socket, current_dir)
+            return
 
         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         node_socket.connect((node_ip, node_port))
@@ -578,6 +699,10 @@ def accept_connections(server_socket):
 
 def main():
     server_socket = setup_control_socket()
+
+    update_list_storage_nodes_thread = threading.Thread(target=update_list_storage_nodes, args=())
+    update_list_storage_nodes_thread.start()
+
     accept_connections(server_socket)
 
 if __name__ == "__main__":

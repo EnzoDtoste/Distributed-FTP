@@ -5,7 +5,7 @@ import hashlib
 import json
 from datetime import datetime
 import time
-from utils import hash_function, getId, find_successor, get_host_ip
+from utils import hash_function, getId, find_successor, get_host_ip, ping_node
 
 def setup_control_socket(port=50):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -96,23 +96,10 @@ def handle_gs_command(storageNode : StorageNode, id_key, client_socket):
         client_socket.send(f"550 {ip}:{port}".encode())
 
 
-def ping_node(node_ip, node_port):
-    node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    
-    try:
-        node_socket.connect((node_ip, node_port))
+def handle_gk_command(storageNode : StorageNode, client_socket):
+    client_socket.send(f"220 {' '.join(get_k_successors(storageNode))}".encode())
 
-        node_socket.sendall(f"PING".encode())
-        print(f"Ping to {node_ip}:{node_port}")
 
-        response = node_socket.recv(1024).decode().strip()
-        node_socket.close()
-
-        return response.startswith("220")
-    except:
-        node_socket.close()
-        return False
-    
 def handle_ping_command(client_socket):
     client_socket.send(f"220".encode())
 
@@ -286,7 +273,7 @@ def update(storageNode : StorageNode):
         time.sleep(30)
         
 
-def request_join(storageNode : StorageNode, node_ip='127.0.0.1', node_port=50):
+def request_join(storageNode : StorageNode, node_ip, node_port):
     try:
         node_ip, node_port = find_successor(getId(storageNode.host, storageNode.port), node_ip, node_port)
 
@@ -698,7 +685,7 @@ def handle_dele_command(storageNode : StorageNode, key, client_socket):
 
         try:
             storageNode.data.pop(key)
-            os.remove(path)
+            #os.remove(path)
             client_socket.send(f"220".encode())
 
         except Exception as e:
@@ -719,6 +706,9 @@ def handle_client(storageNode, client_socket):
         elif command.startswith('GS'):
             key = command[3:].strip()
             handle_gs_command(storageNode, int(key), client_socket)
+
+        elif command.startswith('GK'):
+            handle_gk_command(storageNode, client_socket)
 
         elif command.startswith('RP'):
             handle_rp_command(storageNode, client_socket)

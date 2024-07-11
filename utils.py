@@ -17,6 +17,23 @@ def get_host_ip():
 def getId(host, port):
     return host + ':' + str(port)
 
+def ping_node(node_ip, node_port):
+    node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    
+    try:
+        node_socket.connect((node_ip, node_port))
+
+        node_socket.sendall(f"PING".encode())
+        print(f"Ping to {node_ip}:{node_port}")
+
+        response = node_socket.recv(1024).decode().strip()
+        node_socket.close()
+
+        return response.startswith("220")
+    except:
+        node_socket.close()
+        return False
+
 def find_successor(id_key, node_ip, node_port, hash = False):
     if not hash:
         id_key = hash_function(id_key)
