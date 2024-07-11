@@ -1,0 +1,10 @@
+FROM python:3.11-slim
+
+COPY server_ftp.py /app/server_ftp.py
+COPY utils.py /app/utils.py
+
+WORKDIR /app
+
+EXPOSE 21
+
+CMD ["python", "server_ftp.py"]

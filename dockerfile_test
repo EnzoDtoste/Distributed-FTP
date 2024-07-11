@@ -1,0 +1,13 @@
+FROM python:3.11-slim
+
+COPY test.py /app/test.py
+COPY storage_node.py /app/storage_node.py
+COPY utils.py /app/utils.py
+
+WORKDIR /app
+
+VOLUME /data
+
+EXPOSE 50
+
+CMD ["python", "test.py"]
