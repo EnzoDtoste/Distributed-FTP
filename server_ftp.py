@@ -6,7 +6,7 @@ from utils import find_successor, ping_node
 import random
 import time
 
-storage_nodes = [('172.17.0.2', 50)]
+storage_nodes = [('172.17.0.2', 5000)]
 updating_list_storage_nodes = False
 reading_list_storage_nodes = 0
 
@@ -18,7 +18,7 @@ def get_storage_node():
 
     reading_list_storage_nodes += 1
 
-    indexes = range(len(storage_nodes))
+    indexes = list(range(len(storage_nodes)))
     
     while len(indexes) > 0:
         index_indexes = random.randrange(0, len(indexes), 1)
@@ -334,6 +334,7 @@ def handle_mkd_command(dirname, client_socket, current_dir, node_ip=None, node_p
 
 
 def handle_rmd_command(dirname, client_socket, current_dir, node_ip=None, node_port=None):
+
     dir_path = os.path.normpath(os.path.join(current_dir, dirname))
 
     try:
@@ -392,6 +393,7 @@ def handle_rmd_command(dirname, client_socket, current_dir, node_ip=None, node_p
 
 
 def handle_retr_command(filename, client_socket, data_socket, current_dir, node_ip=None, node_port=None):
+    """Response for RETR command, it finds the node where the requested file should be located, and if it finds it, it is sended to the client"""
     file_path = os.path.join(current_dir, filename)
     
     try:
@@ -488,6 +490,7 @@ def handle_retr_command(filename, client_socket, data_socket, current_dir, node_
 
 
 def handle_stor_command(filename, client_socket, data_socket, current_dir, node_ip=None, node_port=None):
+    """Response for STOR command, it is used to upload a copy of a local file to the server, it finds where the file should be saved and send the data to that node"""
     file_path = os.path.join(current_dir, filename)
     
     try:
@@ -542,6 +545,7 @@ def handle_stor_command(filename, client_socket, data_socket, current_dir, node_
         client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
 def handle_dele_command(filename, client_socket, current_dir, node_ip=None, node_port=None):
+    """Response for DELE command, search for the node where the selected file must be, and if it finds it, removes the file from that node"""
     file_path = os.path.join(current_dir, filename)
     
     try:
@@ -586,7 +590,13 @@ def handle_dele_command(filename, client_socket, current_dir, node_ip=None, node
             client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
 
+        
+
+        
+
+
 def handle_client(client_socket):
+    """Manages the request sended by the client according to the header"""
     current_dir = os.path.normpath("/app")  # Working directory
     data_socket = None
 
@@ -678,6 +688,7 @@ def handle_client(client_socket):
             elif command.startswith('RMD'):
                 dirname = command[4:].strip()
                 handle_rmd_command(dirname, client_socket, current_dir)
+            
 
             else:
                 client_socket.send(b'500 Syntax error, command unrecognized.\r\n')
@@ -691,6 +702,7 @@ def handle_client(client_socket):
         client_socket.close()
 
 def accept_connections(server_socket):
+    """Accepts the request for contections from the client"""
     while True:
         client_socket, addr = server_socket.accept()
         print(f"Accepted connection from {addr}")

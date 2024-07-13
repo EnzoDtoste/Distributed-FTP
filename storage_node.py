@@ -28,12 +28,14 @@ class StorageNode:
         self.successors = []
         self.successor = None
         self.k_successors = 3
+        self.reading_mutex = threading.Lock()
         self.reading_count = 0
         self.updating = False
-        self.handling_join = False
+        self.join_mutex = threading.Lock()
         self.update_thread = threading.Thread(target=update, args=(self,))
         self.stop_update = False
 
+#Find the id of the succesor of a node in a single finger table
 def get_table_successor(finger_table, id):
     for i in range(len(finger_table)):
         if finger_table[i][0] > id:
@@ -43,11 +45,14 @@ def get_table_successor(finger_table, id):
     index = len(finger_table) - 1
     return (finger_table[index][1], finger_table[index][2])
 
+#Fin
 def find_table_successor(storageNode : StorageNode, id):
     while storageNode.updating:
         pass
 
+    storageNode.reading_mutex.acquire()
     storageNode.reading_count += 1
+    storageNode.reading_mutex.release()
 
     if len(storageNode.finger_table_bigger) == 0 and len(storageNode.finger_table_smaller) == 0:
         result = storageNode.successor[1], storageNode.successor[2]
@@ -65,10 +70,13 @@ def find_table_successor(storageNode : StorageNode, id):
         index = len(storageNode.finger_table_bigger) - 1
         result = (storageNode.finger_table_bigger[index][1], storageNode.finger_table_bigger[index][2])
 
+    storageNode.reading_mutex.acquire()
     storageNode.reading_count -= 1
+    storageNode.reading_mutex.release()
     return result
 
 
+#Get a list of strings ip:port of the k sucessors of a node 
 def get_k_successors(storageNode : StorageNode):
     k = storageNode.k_successors
     result = []
@@ -76,7 +84,9 @@ def get_k_successors(storageNode : StorageNode):
     while storageNode.updating:
         pass
 
+    storageNode.reading_mutex.acquire()
     storageNode.reading_count += 1
+    storageNode.reading_mutex.release()
 
     for _, ip, port in storageNode.successors:
         if k > 0:
@@ -85,9 +95,12 @@ def get_k_successors(storageNode : StorageNode):
         else:
             break
 
+    storageNode.reading_mutex.acquire()
     storageNode.reading_count -= 1
+    storageNode.reading_mutex.release()
     return result
 
+#Handle et sucessor command, 
 def handle_gs_command(storageNode : StorageNode, id_key, client_socket):
     if (storageNode.predecessor[0] > storageNode.identifier and (id_key <= storageNode.identifier or id_key > storageNode.predecessor[0])) or (storageNode.predecessor[0] < id_key and id_key <= storageNode.identifier):
         client_socket.send(f"220".encode())
@@ -96,18 +109,21 @@ def handle_gs_command(storageNode : StorageNode, id_key, client_socket):
         client_socket.send(f"550 {ip}:{port}".encode())
 
 
+#Handle get k successors command
 def handle_gk_command(storageNode : StorageNode, client_socket):
     client_socket.send(f"220 {' '.join(get_k_successors(storageNode))}".encode())
 
-
+#Send the accepting message 220
 def handle_ping_command(client_socket):
     client_socket.send(f"220".encode())
 
 
 def check_successors(storageNode : StorageNode):
+    """Update sucesors list and replicates data if its necesary"""
     try:
         new_successors = []
 
+        # Find first successor
         for successor in [storageNode.successor] + storageNode.successors:
             if ping_node(successor[1], successor[2]):
                 new_successors.append(successor)
@@ -211,7 +227,7 @@ def update_finger_table(storageNode : StorageNode):
         
         request_node_ip, request_node_port = storageNode.successors[0][1], storageNode.successors[0][2]
 
-        for i in range(160):
+        for i in range(161):
             ip, port = find_successor(storageNode.identifier + 2 ** i, request_node_ip, request_node_port, True)
             id = hash_function(getId(ip, port))
 
@@ -221,7 +237,7 @@ def update_finger_table(storageNode : StorageNode):
                 new_finger_table_bigger.append((id, ip, port))
             
             elif id < storageNode.identifier:
-                for j in range(160 - i):
+                for j in range(161 - i):
                     ip, port = find_successor(2 ** j, request_node_ip, request_node_port, True)
                     id = hash_function(getId(ip, port))
 
@@ -260,17 +276,14 @@ def update_finger_table(storageNode : StorageNode):
 def update(storageNode : StorageNode):
     while not storageNode.stop_update:
         
-        while storageNode.handling_join:
-            pass
-        
-        storageNode.handling_join = True
+        storageNode.join_mutex.acquire()
 
         check_successors(storageNode)
         update_finger_table(storageNode)
         
-        storageNode.handling_join = False
+        storageNode.join_mutex.release()
 
-        time.sleep(30)
+        time.sleep(5)
         
 
 def request_join(storageNode : StorageNode, node_ip, node_port):
@@ -386,15 +399,12 @@ def request_join(storageNode : StorageNode, node_ip, node_port):
         print(f"Error: {e}")
 
 def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
-    while storageNode.handling_join:
-        pass
-    
-    storageNode.handling_join = True
+    storageNode.join_mutex.acquire()
 
     join_node_id = hash_function(getId(ip, port))
 
     try:
-        if join_node_id > storageNode.predecessor[0] and (storageNode.identifier < storageNode.predecessor[0] or join_node_id < storageNode.identifier):
+        if (storageNode.predecessor[0] > storageNode.identifier and (join_node_id <= storageNode.identifier or join_node_id > storageNode.predecessor[0])) or (storageNode.predecessor[0] < join_node_id and join_node_id <= storageNode.identifier):
 
             client_socket.send(f"220 {storageNode.predecessor[1]}:{storageNode.predecessor[2]}".encode())
 
@@ -447,23 +457,20 @@ def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
 
                 storageNode.predecessor = join_node_id, ip, port
 
-            else:
-                client_socket.send(f"550 {storageNode.predecessor[1]}:{storageNode.predecessor[2]}".encode())
+        else:
+            client_socket.send(f"550 {storageNode.predecessor[1]}:{storageNode.predecessor[2]}".encode())
 
     except Exception as e:
         print(f"Error: {e}")
 
-    storageNode.handling_join = False
+    storageNode.join_mutex.release()
         
 def handle_ss_command(storageNode : StorageNode, ip, port, client_socket):
     new_successor_id = hash_function(getId(ip, port))
     storageNode.successor = new_successor_id, ip, port
 
 def handle_sp_command(storageNode : StorageNode, ip, port, client_socket):
-    while storageNode.handling_join:
-        pass
-    
-    storageNode.handling_join = True
+    storageNode.join_mutex.acquire()
 
     new_predecessor_id = hash_function(getId(ip, port))
     
@@ -474,7 +481,9 @@ def handle_sp_command(storageNode : StorageNode, ip, port, client_socket):
         if not ping_node(storageNode.predecessor[1], storageNode.predecessor[2]):
             storageNode.predecessor = new_predecessor_id, ip, port
 
-    storageNode.handling_join = False
+    storageNode.join_mutex.release()
+
+
 
 
 def handle_rp_command(storageNode : StorageNode, client_socket):
@@ -693,6 +702,9 @@ def handle_dele_command(storageNode : StorageNode, key, client_socket):
     else:
         client_socket.send(f"404 Not Found".encode())
     
+def handle_rnfr_command(storageNode : StorageNode, key, client_socket):
+    if key in storageNode.data:
+        path = storageNode.data[key]
 
 
 def handle_client(storageNode, client_socket):
@@ -766,6 +778,10 @@ def handle_client(storageNode, client_socket):
         elif command.startswith('RMD'):
             key = command[4:].strip()
             handle_rmd_command(storageNode, key, client_socket)
+
+        elif command.startswith('RNFR'):
+            key = command[5:].strip()
+            handle_rnfr_command(storageNode, key, client_socket)
 
     except ConnectionResetError:
         print("Connection reset by peer")
