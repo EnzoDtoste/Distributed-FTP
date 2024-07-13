@@ -131,7 +131,14 @@ def check_successors(storageNode : StorageNode):
             response = node_socket.recv(1024).decode().strip()
 
             if response.startswith("220"):
-                for key, value in storageNode.data.items():
+                items = storageNode.data.items()
+
+                for i in range(len(items)):
+                    try:
+                        key, value = items[i]
+                    except:
+                        break
+
                     id_key = hash_function(key)
 
                     if (storageNode.predecessor[0] > storageNode.identifier and (id_key <= storageNode.identifier or id_key > storageNode.predecessor[0])) or (storageNode.predecessor[0] < id_key and id_key <= storageNode.identifier):
@@ -401,7 +408,14 @@ def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
             response = client_socket.recv(1024).decode().strip()
 
             if response.startswith("220"):
-                for key, value in storageNode.data.items():
+                items = storageNode.data.items()
+
+                for i in range(len(items)):
+                    try:
+                        key, value = items[i]
+                    except:
+                        break
+
                     id_key = hash_function(key)
 
                     if (storageNode.predecessor[0] > join_node_id and (id_key <= join_node_id or id_key > storageNode.predecessor[0])) or (storageNode.predecessor[0] < id_key and id_key <= join_node_id):
@@ -550,7 +564,18 @@ def handle_list_command(storageNode : StorageNode, key, client_socket):
             response = client_socket.recv(1024).decode().strip()
 
             if response.startswith("220"):
-                client_socket.sendall('\n'.join([info for info in dirs.values()]).encode('utf-8'))
+                values = dirs.values()
+                result = []
+
+                for i in range(len(values)):
+                    try:
+                        info = values[i]
+                    except:
+                        break
+                    
+                    result.append(info)
+
+                client_socket.sendall('\n'.join(result).encode('utf-8'))
                 print("Transfer complete")
 
         except Exception as e:
@@ -578,8 +603,21 @@ def handle_rmd_command(storageNode : StorageNode, key, client_socket):
         dirs = storageNode.data.pop(key)[0]
 
         try:
-            folders = [folder for folder, info in dirs.items() if info.startswith('drwxr-xr-x')]
-            files = [file for file, info in dirs.items() if info.startswith('-rw-r--r--')]
+            items = dirs.items()
+
+            folders = []
+            files = []
+
+            for i in range(len(items)):
+                try:
+                    directory, info = items[i]
+                except:
+                    break
+
+                if info.startswith('drwxr-xr-x'):
+                    folders.append(directory)
+                else:
+                    files.append(directory)
 
             directories = '\n'.join([str(len(folders))] + folders + files)
             client_socket.send(f"220 {directories}".encode())
