@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-COPY test.py /app/test.py
+COPY tests/test5.py /app/test5.py
 COPY storage_node.py /app/storage_node.py
 COPY utils.py /app/utils.py
 
@@ -8,6 +8,6 @@ WORKDIR /app
 
 VOLUME /data
 
-EXPOSE 50
+EXPOSE 66
 
-CMD ["python", "test.py"]
+CMD ["python", "test5.py"]

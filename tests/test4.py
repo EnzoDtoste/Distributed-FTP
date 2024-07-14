@@ -26,7 +26,7 @@ node1.update_thread.start()
 node2.update_thread.start()
 
 while True:
-
+    time.sleep(90)
     time.sleep(20)
 
     print("-------------------------------------------------")

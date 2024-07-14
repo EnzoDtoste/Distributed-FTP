@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-COPY test4.py /app/test4.py
+COPY tests/test4.py /app/test4.py
 COPY storage_node.py /app/storage_node.py
 COPY utils.py /app/utils.py
 
