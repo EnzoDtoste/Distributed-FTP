@@ -34,6 +34,7 @@ class StorageNode:
         self.join_mutex = threading.Lock()
         self.update_thread = threading.Thread(target=update, args=(self,))
         self.stop_update = False
+        self.finished_first_update = False
 
 #Find the id of the succesor of a node in a single finger table
 def get_table_successor(finger_table, id):
@@ -133,8 +134,17 @@ def check_successors(storageNode : StorageNode):
             return False
 
         while len(new_successors) < storageNode.k_successors:
-            ip, port = find_successor(new_successors[-1][0] + 1, new_successors[-1][1], new_successors[-1][2], True)
-            new_successors.append((hash_function(getId(ip, port)), ip, port))
+            try:
+                ip, port = find_successor(new_successors[-1][0] + 1, new_successors[-1][1], new_successors[-1][2], True)
+            except:
+                break
+            
+            id = hash_function(getId(ip, port))
+
+            if id != storageNode.identifier:
+                new_successors.append((id, ip, port))
+            else:
+                break
 
         for new_successor in new_successors:
             node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -235,7 +245,11 @@ def update_finger_table(storageNode : StorageNode):
         request_node_ip, request_node_port = storageNode.successors[0][1], storageNode.successors[0][2]
 
         for i in range(161):
-            ip, port = find_successor(storageNode.identifier + 2 ** i, request_node_ip, request_node_port, True)
+            try:
+                ip, port = find_successor(storageNode.identifier + 2 ** i, request_node_ip, request_node_port, True)
+            except:
+                break
+            
             id = hash_function(getId(ip, port))
 
             request_node_ip, request_node_port = ip, port
@@ -245,7 +259,11 @@ def update_finger_table(storageNode : StorageNode):
             
             elif id < storageNode.identifier:
                 for j in range(161 - i):
-                    ip, port = find_successor(2 ** j, request_node_ip, request_node_port, True)
+                    try:
+                        ip, port = find_successor(2 ** j, request_node_ip, request_node_port, True)
+                    except:
+                        break
+
                     id = hash_function(getId(ip, port))
 
                     request_node_ip, request_node_port = ip, port
@@ -285,9 +303,10 @@ def update(storageNode : StorageNode):
         
         storageNode.join_mutex.acquire()
 
-        check_successors(storageNode)
-        update_finger_table(storageNode)
-        
+        if check_successors(storageNode):
+            if update_finger_table(storageNode):
+                storageNode.finished_first_update = True
+
         storageNode.join_mutex.release()
 
         time.sleep(5)
@@ -295,7 +314,11 @@ def update(storageNode : StorageNode):
 
 def request_join(storageNode : StorageNode, node_ip, node_port):
     try:
-        node_ip, node_port = find_successor(getId(storageNode.host, storageNode.port), node_ip, node_port)
+        try:
+            node_ip, node_port = find_successor(getId(storageNode.host, storageNode.port), node_ip, node_port)
+        except:
+            request_join(storageNode, node_ip, node_port)
+            return
 
         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         node_socket.connect((node_ip, node_port))
@@ -311,6 +334,8 @@ def request_join(storageNode : StorageNode, node_ip, node_port):
             
             while storageNode.update_thread.is_alive():
                 pass
+
+            storageNode.finished_first_update = False
 
             storageNode.successor = hash_function(getId(node_ip, node_port)), node_ip, node_port
 
@@ -406,6 +431,9 @@ def request_join(storageNode : StorageNode, node_ip, node_port):
         print(f"Error: {e}")
 
 def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
+    while not storageNode.finished_first_update:
+        pass
+    
     storageNode.join_mutex.acquire()
 
     join_node_id = hash_function(getId(ip, port))

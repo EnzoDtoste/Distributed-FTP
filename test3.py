@@ -28,11 +28,18 @@ time.sleep(10)
 
 request_join(node3, node1.host , node1.port)
 
-nodes = [StorageNode(port=i) for i in range(50003, 50010)]
+time.sleep(30)
 
-for node in nodes:
+nodes = [StorageNode(port=i) for i in range(50003, 50007)]
+
+accept_connections_async(nodes[0])
+request_join(nodes[0], node1.host , node1.port)
+
+time.sleep(30)
+
+for node in nodes[1:]:
     accept_connections_async(node)
-    request_join(node, node3.host , node3.port)
+    request_join(node, node1.host , node1.port)
 
 time.sleep(90)
 
