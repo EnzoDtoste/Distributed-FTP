@@ -262,7 +262,7 @@ def update_finger_table(storageNode : StorageNode):
 
             request_node_ip, request_node_port = ip, port
 
-            if id > storageNode.identifier and (len(new_finger_table_bigger) == 0 or new_finger_table_bigger[-1][0] != id):
+            if id > storageNode.identifier and (len(new_finger_table_bigger) == 0 or (new_finger_table_bigger[-1][0] != id and new_finger_table_bigger[0][0] != id)):
                 new_finger_table_bigger.append((id, ip, port))
             
             elif id < storageNode.identifier:
@@ -279,7 +279,7 @@ def update_finger_table(storageNode : StorageNode):
                     if id >= storageNode.identifier:
                         break
 
-                    if len(new_finger_table_smaller) == 0 or new_finger_table_smaller[-1][0] != id:
+                    if len(new_finger_table_smaller) == 0 or (new_finger_table_smaller[-1][0] != id and new_finger_table_smaller[0][0] != id):
                         new_finger_table_smaller.append((id, ip, port))
 
                 break
