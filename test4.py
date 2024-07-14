@@ -24,7 +24,7 @@ node1.update_thread.start()
 node2.update_thread.start()
 
 
-time.sleep(60)
+time.sleep(70)
 
 node1.stop_update = True
 node2.stop_update = True

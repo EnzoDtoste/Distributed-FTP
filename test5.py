@@ -14,6 +14,8 @@ request_join(node3, '172.17.0.2', 5000)
 
 time.sleep(60)
 node3.stop_update = True
+
+time.sleep(40)
 print("Node 3")
 print(node3.predecessor)
 print(node3.successors)
