@@ -43,7 +43,7 @@ node3.stop_update = True
 for node in nodes:
     node.stop_update = True
 
-time.sleep(20)
+time.sleep(60)
 
 print("Node 1")
 print(node1.predecessor)

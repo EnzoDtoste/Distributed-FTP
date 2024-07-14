@@ -294,6 +294,7 @@ def update(storageNode : StorageNode):
         
 
 def request_join(storageNode : StorageNode, node_ip, node_port):
+    """Request to join a node (storageNode) to the DHT of a node (node_ip, node_port)"""
     try:
         node_ip, node_port = find_successor(getId(storageNode.host, storageNode.port), node_ip, node_port)
 
@@ -406,6 +407,7 @@ def request_join(storageNode : StorageNode, node_ip, node_port):
         print(f"Error: {e}")
 
 def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
+    """"""
     storageNode.join_mutex.acquire()
 
     join_node_id = hash_function(getId(ip, port))
@@ -834,6 +836,7 @@ def accept_connections(storageNode):
         client_thread.start()    
 
 def accept_connections_async(storageNode):
+    """Creates a thread to start accepting conection requests to this node"""
     thread = threading.Thread(target=accept_connections, args=(storageNode,))
     thread.start()    
 
