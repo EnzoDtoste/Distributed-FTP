@@ -7,17 +7,23 @@ import threading
 import random
 
 node3 = StorageNode(port=5002) 
+node3.verbose = False
+
 accept_connections_async(node3)
 request_join(node3, '172.17.0.2', 5000)
 
+while True:
 
+    time.sleep(20)
 
-time.sleep(60)
-node3.stop_update = True
+    print("-------------------------------------------------")
+    print()
 
-time.sleep(40)
-print("Node 3")
-print(node3.predecessor)
-print(node3.successors)
-print(node3.finger_table_bigger)
-print(node3.finger_table_smaller)
+    while node3.updating:
+        pass
+
+    print("Node 3")
+    print(node3.predecessor)
+    print(node3.successors)
+    print(node3.finger_table_bigger)
+    print(node3.finger_table_smaller)

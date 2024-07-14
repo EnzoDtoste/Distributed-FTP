@@ -35,6 +35,8 @@ class StorageNode:
         self.update_thread = threading.Thread(target=update, args=(self,))
         self.stop_update = False
         self.finished_first_update = False
+        self.verbose = True
+        self.update_verbose = False
 
 #Find the id of the succesor of a node in a single finger table
 def get_table_successor(finger_table, id):
@@ -126,7 +128,7 @@ def check_successors(storageNode : StorageNode):
 
         # Find first successor
         for successor in [storageNode.successor] + storageNode.successors:
-            if ping_node(successor[1], successor[2]):
+            if ping_node(successor[1], successor[2], storageNode.update_verbose):
                 new_successors.append(successor)
                 break
 
@@ -135,7 +137,7 @@ def check_successors(storageNode : StorageNode):
 
         while len(new_successors) < storageNode.k_successors:
             try:
-                ip, port = find_successor(new_successors[-1][0] + 1, new_successors[-1][1], new_successors[-1][2], True)
+                ip, port = find_successor(new_successors[-1][0] + 1, new_successors[-1][1], new_successors[-1][2], True, storageNode.update_verbose)
             except:
                 break
             
@@ -150,7 +152,8 @@ def check_successors(storageNode : StorageNode):
             node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             node_socket.connect((new_successor[1], new_successor[2]))
             
-            print(f"Replicating in {new_successor[1]}:{new_successor[2]}")
+            if storageNode.update_verbose:
+                print(f"Replicating in {new_successor[1]}:{new_successor[2]}")
             
             node_socket.sendall(f"RP".encode())
 
@@ -183,7 +186,8 @@ def check_successors(storageNode : StorageNode):
                                 if (not response) or not response.startswith("220"):
                                     raise Exception(f"Something went wrong replicating {new_successor[1]}:{new_successor[2]} {key}")
 
-                                print(f"Transfer complete {key}")
+                                if storageNode.update_verbose:
+                                    print(f"Transfer complete {key}")
 
                         else:
                             node_socket.sendall(f"File {value[1].strftime('%Y%m%d%H%M%S%f')} {os.stat(value[0]).st_size} {key}".encode())
@@ -204,7 +208,8 @@ def check_successors(storageNode : StorageNode):
                                 if (not response) or not response.startswith("220"):
                                     raise Exception(f"Something went wrong replicating {new_successor[1]}:{new_successor[2]} {key}")
 
-                                print(f"Transfer complete {key}")
+                                if storageNode.verbose:
+                                    print(f"Transfer complete {key}")
 
                 node_socket.send(b"226 Transfer complete.\r\n")
             
@@ -218,7 +223,8 @@ def check_successors(storageNode : StorageNode):
         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         node_socket.connect((new_successors[0][1], new_successors[0][2]))
 
-        print(f"Notify Successor {new_successors[0][1]}:{new_successors[0][2]}")
+        if storageNode.update_verbose:
+            print(f"Notify Successor {new_successors[0][1]}:{new_successors[0][2]}")
         
         node_socket.sendall(f"SP {storageNode.host}:{storageNode.port}".encode())
         node_socket.close()
@@ -232,7 +238,9 @@ def check_successors(storageNode : StorageNode):
 
     except Exception as e:
         storageNode.updating = False
-        print(f"Checking Successors Error: {e}")
+        
+        if storageNode.update_verbose:
+            print(f"Checking Successors Error: {e}")
 
         return False
 
@@ -246,7 +254,7 @@ def update_finger_table(storageNode : StorageNode):
 
         for i in range(161):
             try:
-                ip, port = find_successor(storageNode.identifier + 2 ** i, request_node_ip, request_node_port, True)
+                ip, port = find_successor(storageNode.identifier + 2 ** i, request_node_ip, request_node_port, True, storageNode.update_verbose)
             except:
                 break
             
@@ -260,7 +268,7 @@ def update_finger_table(storageNode : StorageNode):
             elif id < storageNode.identifier:
                 for j in range(161 - i):
                     try:
-                        ip, port = find_successor(2 ** j, request_node_ip, request_node_port, True)
+                        ip, port = find_successor(2 ** j, request_node_ip, request_node_port, True, storageNode.update_verbose)
                     except:
                         break
 
@@ -294,7 +302,10 @@ def update_finger_table(storageNode : StorageNode):
 
     except Exception as e:
         storageNode.updating = False
-        print(f"Error: {e}")
+
+        if storageNode.update_verbose:
+            print(f"Error: {e}")
+        
         return False
 
 
@@ -316,7 +327,7 @@ def request_join(storageNode : StorageNode, node_ip, node_port):
     """Request to join a node (storageNode) to the DHT of a node (node_ip, node_port)"""
     try:
         try:
-            node_ip, node_port = find_successor(getId(storageNode.host, storageNode.port), node_ip, node_port)
+            node_ip, node_port = find_successor(getId(storageNode.host, storageNode.port), node_ip, node_port, verbose=storageNode.verbose)
         except:
             request_join(storageNode, node_ip, node_port)
             return
@@ -324,7 +335,8 @@ def request_join(storageNode : StorageNode, node_ip, node_port):
         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         node_socket.connect((node_ip, node_port))
         
-        print(f"Connected to {node_ip}:{node_port}")
+        if storageNode.verbose:
+            print(f"Connected to {node_ip}:{node_port}")
         
         node_socket.sendall(f"JOIN {storageNode.host}:{storageNode.port}".encode())
 
@@ -370,7 +382,9 @@ def request_join(storageNode : StorageNode, node_ip, node_port):
 
                         storageNode.data[path] = json.loads(data_json), version
                         node_socket.send(f"220".encode())
-                        print(f"Transfer complete {path}")
+
+                        if storageNode.verbose:
+                            print(f"Transfer complete {path}")
 
                     else:
                         node_socket.send(f"403".encode())
@@ -396,7 +410,9 @@ def request_join(storageNode : StorageNode, node_ip, node_port):
                             
                             storageNode.data[key] = key, version
                             node_socket.send(f"220".encode())
-                            print(f"Transfer complete {key}")
+
+                            if storageNode.verbose:
+                                print(f"Transfer complete {key}")
 
                     else:
                         node_socket.send(f"403".encode())
@@ -410,17 +426,12 @@ def request_join(storageNode : StorageNode, node_ip, node_port):
             predecessor_socket.connect((predecessor_ip, predecessor_port))
 
             predecessor_socket.sendall(f"SS {storageNode.host}:{storageNode.port}".encode())
-            print(f"Notified Predecessor {predecessor_ip}:{predecessor_port}")
+
+            if storageNode.verbose:
+                print(f"Notified Predecessor {predecessor_ip}:{predecessor_port}")
 
             storageNode.stop_update = False
             storageNode.update_thread.start()
-
-            print("---------------")
-            print(storageNode.successors)
-            print("---------------")
-            print(storageNode.finger_table_bigger)
-            print(storageNode.finger_table_smaller)
-            print("---------------")
 
         elif response.startswith("550"):
             ip, port = response.split(" ")[1].split(":")
@@ -429,7 +440,8 @@ def request_join(storageNode : StorageNode, node_ip, node_port):
             return
 
     except Exception as e:
-        print(f"Error: {e}")
+        if storageNode.verbose:
+            print(f"Error: {e}")
 
 def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
     """"""
@@ -474,7 +486,8 @@ def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
                                 if (not response) or not response.startswith("220"):
                                     raise Exception(f"Something went wrong sending data {ip}:{port} {key}")
 
-                                print(f"Transfer complete {key}")
+                                if storageNode.verbose:
+                                    print(f"Transfer complete {key}")
 
                         else:
                             client_socket.sendall(f"File {value[1].strftime('%Y%m%d%H%M%S%f')} {os.stat(value[0]).st_size} {key}".encode())
@@ -495,7 +508,8 @@ def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
                                 if (not response) or not response.startswith("220"):
                                     raise Exception(f"Something went wrong replicating {ip}:{port} {key}")
 
-                                print(f"Transfer complete {key}")
+                                if storageNode.verbose:
+                                    print(f"Transfer complete {key}")
 
                 client_socket.send(b"226 Transfer complete.\r\n")
 
@@ -505,7 +519,8 @@ def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
             client_socket.send(f"550 {storageNode.predecessor[1]}:{storageNode.predecessor[2]}".encode())
 
     except Exception as e:
-        print(f"Error: {e}")
+        if storageNode.verbose:
+            print(f"Error: {e}")
 
     storageNode.join_mutex.release()
         
@@ -522,7 +537,7 @@ def handle_sp_command(storageNode : StorageNode, ip, port, client_socket):
         storageNode.predecessor = new_predecessor_id, ip, port
 
     else:
-        if not ping_node(storageNode.predecessor[1], storageNode.predecessor[2]):
+        if not ping_node(storageNode.predecessor[1], storageNode.predecessor[2], storageNode.verbose):
             storageNode.predecessor = new_predecessor_id, ip, port
 
     storageNode.join_mutex.release()
@@ -557,7 +572,9 @@ def handle_rp_command(storageNode : StorageNode, client_socket):
 
                     storageNode.data[path] = json.loads(data_json), version
                     client_socket.send(f"220".encode())
-                    print(f"Transfer complete {path}")
+
+                    if storageNode.verbose:
+                        print(f"Transfer complete {path}")
 
                 else:
                     client_socket.send(f"403".encode())
@@ -583,7 +600,9 @@ def handle_rp_command(storageNode : StorageNode, client_socket):
                         
                         storageNode.data[key] = key, version
                         client_socket.send(f"220".encode())
-                        print(f"Transfer complete {key}")
+
+                        if storageNode.verbose:
+                            print(f"Transfer complete {key}")
 
                 else:
                     client_socket.send(f"403".encode())
@@ -592,7 +611,8 @@ def handle_rp_command(storageNode : StorageNode, client_socket):
                 break
 
     except Exception as e:
-        print(f"Error: {e}")
+        if storageNode.verbose:
+            print(f"Error: {e}")
 
 def handle_list_command(storageNode : StorageNode, key, client_socket):
     if key in storageNode.data:
@@ -615,10 +635,13 @@ def handle_list_command(storageNode : StorageNode, key, client_socket):
                     result.append(info)
 
                 client_socket.sendall('\n'.join(result).encode('utf-8'))
-                print("Transfer complete")
+
+                if storageNode.verbose:
+                    print("Transfer complete")
 
         except Exception as e:
-            print(f"Error: {e}")
+            if storageNode.verbose:
+                print(f"Error: {e}")
     else:
         client_socket.send(f"404 Not Found".encode())
     
@@ -632,7 +655,8 @@ def handle_mkd_command(storageNode : StorageNode, key, client_socket):
             client_socket.send(f"220".encode())
 
         except Exception as e:
-            print(f"Error: {e}")
+            if storageNode.verbose:
+                print(f"Error: {e}")
     else:
         client_socket.send(f"403 Already exists".encode())
     
@@ -662,7 +686,8 @@ def handle_rmd_command(storageNode : StorageNode, key, client_socket):
             client_socket.send(f"220 {directories}".encode())
 
         except Exception as e:
-            print(f"Error: {e}")
+            if storageNode.verbose:
+                print(f"Error: {e}")
     else:
         client_socket.send(f"404 Not Found".encode())
     
@@ -678,7 +703,8 @@ def handle_stor_dir_command(storageNode : StorageNode, folder, dirname, info, cl
             client_socket.send(f"220".encode())
             
         except Exception as e:
-            print(f"Error: {e}")
+            if storageNode.verbose:
+                print(f"Error: {e}")
     else:
         client_socket.send(f"404 Not Found".encode())
     
@@ -690,13 +716,15 @@ def handle_dele_dir_command(storageNode : StorageNode, folder, dirname, client_s
         dirs.pop(dirname)
         storageNode.data[folder] = dirs, time
 
-        print(f"Pop {dirname}")
+        if storageNode.verbose:
+            print(f"Pop {dirname}")
         
         try:
             client_socket.send(f"220".encode())
             
         except Exception as e:
-            print(f"Error: {e}")
+            if storageNode.verbose:
+                print(f"Error: {e}")
     else:
         client_socket.send(f"404 Not Found".encode())
     
@@ -708,7 +736,9 @@ def handle_retr_command(storageNode : StorageNode, key, idx, client_socket):
         try:
             with open(path, "rb") as file: # binary mode
                 size = os.stat(path).st_size
-                print(f"File size: {size} bytes")
+
+                if storageNode.verbose:
+                    print(f"File size: {size} bytes")
 
                 client_socket.send(f"220 {size} {' '.join(get_k_successors(storageNode))}".encode())
 
@@ -724,9 +754,11 @@ def handle_retr_command(storageNode : StorageNode, key, idx, client_socket):
                         #print(f"{count} / {size}")
                         data = file.read(4096)
 
-                    print("Transfer complete")
+                    if storageNode.verbose:
+                        print("Transfer complete")
         except Exception as e:
-            print(f"Error: {e}")
+            if storageNode.verbose:
+                print(f"Error: {e}")
     else:
         client_socket.send(f"404 Not Found".encode())
     
@@ -753,7 +785,8 @@ def handle_stor_command(storageNode : StorageNode, key, client_socket):
                 storageNode.data[key] = key, time
 
     except Exception as e:
-        print(f"Error: {e}")
+        if storageNode.verbose:
+            print(f"Error: {e}")
 
 
 def handle_dele_command(storageNode : StorageNode, key, client_socket):
@@ -766,7 +799,8 @@ def handle_dele_command(storageNode : StorageNode, key, client_socket):
             client_socket.send(f"220".encode())
 
         except Exception as e:
-            print(f"Error: {e}")
+            if storageNode.verbose:
+                print(f"Error: {e}")
     else:
         client_socket.send(f"404 Not Found".encode())
     
@@ -778,7 +812,9 @@ def handle_rnfr_command(storageNode : StorageNode, key, client_socket):
 def handle_client(storageNode, client_socket):
     try:
         command = client_socket.recv(1024).decode().strip()
-        print(f"Received command: {command}")
+        
+        if storageNode.verbose:
+            print(f"Received command: {command}")
 
         if command.startswith('PING'):
             handle_ping_command(client_socket)
@@ -852,14 +888,18 @@ def handle_client(storageNode, client_socket):
             handle_rnfr_command(storageNode, key, client_socket)
 
     except ConnectionResetError:
-        print("Connection reset by peer")
+        if storageNode.verbose:
+            print("Connection reset by peer")
     finally:
         client_socket.close()
 
 def accept_connections(storageNode):
     while True:
         client_socket, addr = storageNode.socket.accept()
-        print(f"Accepted connection from {addr}")
+        
+        if storageNode.verbose:
+            print(f"Accepted connection from {addr}")
+        
         client_thread = threading.Thread(target=handle_client, args=(storageNode, client_socket,))
         client_thread.start()    
 

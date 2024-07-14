@@ -17,14 +17,16 @@ def get_host_ip():
 def getId(host, port):
     return host + ':' + str(port)
 
-def ping_node(node_ip, node_port):
+def ping_node(node_ip, node_port, verbose=True):
     node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     
     try:
         node_socket.connect((node_ip, node_port))
 
         node_socket.sendall(f"PING".encode())
-        print(f"Ping to {node_ip}:{node_port}")
+        
+        if verbose:
+            print(f"Ping to {node_ip}:{node_port}")
 
         response = node_socket.recv(1024).decode().strip()
         node_socket.close()
@@ -34,14 +36,15 @@ def ping_node(node_ip, node_port):
         node_socket.close()
         return False
 
-def find_successor(id_key, node_ip, node_port, hash = False):
+def find_successor(id_key, node_ip, node_port, hash = False, verbose=True):
     if not hash:
         id_key = hash_function(id_key)
     
     node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     node_socket.connect((node_ip, node_port))
 
-    print(f"Connected to {node_ip}:{node_port}")
+    if verbose:
+        print(f"Connected to {node_ip}:{node_port}")
     
     node_socket.sendall(f"GS {id_key}".encode())
 
@@ -54,4 +57,4 @@ def find_successor(id_key, node_ip, node_port, hash = False):
     ip, port = response.split(" ")[1].split(":")
     node_socket.close()
         
-    return find_successor(id_key, ip, int(port), True)
+    return find_successor(id_key, ip, int(port), True, verbose)

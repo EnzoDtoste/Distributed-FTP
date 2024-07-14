@@ -9,6 +9,8 @@ import random
 node1 = StorageNode(port=5000)
 node2 = StorageNode(port=5001)
 
+node1.verbose = False
+node2.verbose = False
 
 node1.predecessor = node2.identifier, node2.host, node2.port
 node2.predecessor = node1.identifier, node1.host, node1.port
@@ -23,21 +25,28 @@ accept_connections_async(node2)
 node1.update_thread.start()
 node2.update_thread.start()
 
+while True:
 
-time.sleep(70)
+    time.sleep(20)
 
-node1.stop_update = True
-node2.stop_update = True
+    print("-------------------------------------------------")
+    print()
 
-print("Node 1")
-print(node1.predecessor)
-print(node1.successors)
-print(node1.finger_table_bigger)
-print(node1.finger_table_smaller)
+    while node1.updating:
+        pass
 
-print("------------------------")
-print("Node 2")
-print(node2.predecessor)
-print(node2.successors)
-print(node2.finger_table_bigger)
-print(node2.finger_table_smaller)
+    print("Node 1")
+    print(node1.predecessor)
+    print(node1.successors)
+    print(node1.finger_table_bigger)
+    print(node1.finger_table_smaller)
+
+    while node2.updating:
+        pass
+
+    print("------------------------")
+    print("Node 2")
+    print(node2.predecessor)
+    print(node2.successors)
+    print(node2.finger_table_bigger)
+    print(node2.finger_table_smaller)
