@@ -902,6 +902,7 @@ def handle_client(storageNode, client_socket):
         client_socket.close()
 
 def accept_connections(storageNode):
+    """Creates a thrad to accept all the incoming conections"""
     while True:
         client_socket, addr = storageNode.socket.accept()
         
