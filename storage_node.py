@@ -335,7 +335,7 @@ def auto_request_join(storageNode: StorageNode, index = 0):
             print(f"Successfully connected to {ip_cache[index]}:{port_cache[index]}")
         except:
             auto_request_join(storageNode, (index + 1))
-            print(f"Failed to connect to {ip_cache[index]}:{port_cache[index]} - {e}")
+            print(f"Failed to connect to {ip_cache[index]}:{port_cache[index]} - {index}")
     else:
         print("All default IPs failed, attempting to use Broadcast...")
         #Here we should use Broadcast
