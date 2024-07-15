@@ -341,7 +341,38 @@ def auto_request_join(storageNode: StorageNode, index = 0):
         #Here we should use Broadcast
 
 def broadcast_request_join(storageNode: StorageNode):
-    pass
+    broadcast_ip = '<broadcast>'
+    broadcast_port = 5000  # Puerto de difusión
+    message = json.dumps({'action': 'request_join', 'node_info': 'your_node_info'})  # Ajusta la información del nodo según sea necesario
+    
+    # Crear un socket UDP
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        sock.settimeout(5)
+        
+        try:
+            # Enviar mensaje de difusión
+            sock.sendto(message.encode(), (broadcast_ip, broadcast_port))
+            print(f"Broadcast message sent: {message}")
+            
+            # Escuchar respuestas
+            while True:
+                try:
+                    response, addr = sock.recvfrom(4096)  # Tamaño del búfer en bytes
+                    response_data = json.loads(response.decode())
+                    print(f"Received response from {addr}: {response_data}")
+                    
+                    if response_data.get('action') == 'join_response':
+                        ip = addr[0]
+                        port = response_data.get('port')
+                        if request_join(storageNode, ip, port):
+                            print(f"Successfully joined the network via {ip}:{port}")
+                            return
+                except socket.timeout:
+                    print("Broadcast request timed out")
+                    break
+        except Exception as e:
+            print(f"Exception in broadcast_request_join: {e}")
 
 def request_join(storageNode : StorageNode, node_ip, node_port):
     """Request to join a node (storageNode) to the DHT of a node (node_ip, node_port)"""
