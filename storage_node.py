@@ -326,6 +326,23 @@ def update(storageNode : StorageNode):
         time.sleep(5)
         
 
+def auto_request_join(storageNode: StorageNode, index = 0):
+    ip_cache = ['172.17.0.2', '172.17.0.2', '172.17.0.3']
+    port_cache = [5000, 5001, 5000]
+    if(index < len(ip_cache)):
+        try:
+            request_join(storageNode, ip_cache[index], port_cache[index])
+            print(f"Successfully connected to {ip_cache[index]}:{port_cache[index]}")
+        except:
+            auto_request_join(storageNode, (index + 1))
+            print(f"Failed to connect to {ip_cache[index]}:{port_cache[index]} - {e}")
+    else:
+        print("All default IPs failed, attempting to use Broadcast...")
+        #Here we should use Broadcast
+
+def broadcast_request_join(storageNode: StorageNode):
+    pass
+
 def request_join(storageNode : StorageNode, node_ip, node_port):
     """Request to join a node (storageNode) to the DHT of a node (node_ip, node_port)"""
     try:
