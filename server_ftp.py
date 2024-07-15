@@ -39,6 +39,7 @@ def get_storage_node():
 
 
 def update_list_storage_nodes():
+    """Refreesh the StorageNodes list"""
     global storage_nodes, updating_list_storage_nodes, reading_list_storage_nodes
 
     while True:
@@ -79,6 +80,7 @@ def update_list_storage_nodes():
 
 
 def setup_control_socket(host='0.0.0.0', port=21):
+    """ """
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.bind((host, port))
     server_socket.listen(5)
@@ -86,6 +88,7 @@ def setup_control_socket(host='0.0.0.0', port=21):
     return server_socket
 
 def handle_pasv_command(client_socket, port_range=(50000, 50100)):
+    """"Response for PASV command, """
     for port in random.sample(range(*port_range), port_range[1] - port_range[0]):
         try:
             data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -112,6 +115,7 @@ def handle_pasv_command(client_socket, port_range=(50000, 50100)):
     return data_client
 
 def handle_port_command(command, client_socket):
+    """Response for PORT command, stablish a connection between a client and the server, returns the socket with the conection""" 
     parts = command.split()
     address_parts = parts[1].split(',') 
     ip_address = '.'.join(address_parts[:4])  # get ip address
@@ -123,6 +127,7 @@ def handle_port_command(command, client_socket):
     return data_socket
 
 def send_directory_listing(client_socket, data_socket, current_dir, node_ip=None, node_port=None):
+    """Finds the node where its located a file and lists its content"""
     try:
         while node_ip is None or node_port is None:
             node_ip, node_port = get_storage_node()
@@ -221,6 +226,7 @@ def send_directory_listing(client_socket, data_socket, current_dir, node_ip=None
 
 
 def send_stor_dir_command(dirname, info, current_dir, node_ip=None, node_port=None):
+    """Insert a file in the list of the parent folder"""
     dir_path = os.path.normpath(os.path.join(current_dir, dirname))
 
     try:
@@ -258,6 +264,7 @@ def send_stor_dir_command(dirname, info, current_dir, node_ip=None, node_port=No
         return False
     
 def send_dele_dir_command(dirname, current_dir, node_ip=None, node_port=None):
+    """Erase a file from the list of the parent folder"""
     dir_path = os.path.normpath(os.path.join(current_dir, dirname))
 
     try:
@@ -295,6 +302,8 @@ def send_dele_dir_command(dirname, current_dir, node_ip=None, node_port=None):
         return False
 
 def handle_mkd_command(dirname, client_socket, current_dir, node_ip=None, node_port=None):
+    """Response for MKD command, it creates a new directory in the server in the current path with the name specified in dirname.
+      This data is stored in the apropiated node"""
     new_dir_path = os.path.normpath(os.path.join(current_dir, dirname))
 
     try:
@@ -339,7 +348,7 @@ def handle_mkd_command(dirname, client_socket, current_dir, node_ip=None, node_p
 
 
 def handle_rmd_command(dirname, client_socket, current_dir, node_ip=None, node_port=None):
-
+    """Response for RMD command, it finds the node where the requested directory should be located, and if it finds it, it is removed from the node"""
     dir_path = os.path.normpath(os.path.join(current_dir, dirname))
 
     try:
