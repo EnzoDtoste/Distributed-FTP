@@ -5,6 +5,7 @@ import time
 import datetime
 import threading
 import random
+import socket
 
 node1 = StorageNode(port=5000)
 node2 = StorageNode(port=5001)
@@ -18,15 +19,29 @@ node2.predecessor = node1.identifier, node1.host, node1.port
 node1.successor = node2.identifier, node2.host, node2.port
 node2.successor = node1.identifier, node1.host, node1.port
 
-
 accept_connections_async(node1)
 accept_connections_async(node2)
 
 node1.update_thread.start()
 node2.update_thread.start()
 
+app_path = os.path.normpath('/app')
+
 while True:
-    time.sleep(90)
+    ip, port = find_successor(app_path, node1.host, node1.port)
+
+    app_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    app_socket.connect((ip, port))
+
+    app_socket.sendall(f"MKD {app_path}".encode())
+
+    response = app_socket.recv(1024).decode().strip()
+
+    if response.startswith("220"):
+        app_socket.close()
+        break
+
+while True:
     time.sleep(20)
 
     print("-------------------------------------------------")

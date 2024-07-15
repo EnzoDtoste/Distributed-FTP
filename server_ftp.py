@@ -9,6 +9,7 @@ import time
 storage_nodes = [('172.17.0.2', 5000)]
 updating_list_storage_nodes = False
 reading_list_storage_nodes = 0
+reading_lock = threading.Lock()
 
 def get_storage_node():
     global storage_nodes, updating_list_storage_nodes, reading_list_storage_nodes
@@ -16,7 +17,9 @@ def get_storage_node():
     while updating_list_storage_nodes:
         pass
 
+    reading_lock.acquire()
     reading_list_storage_nodes += 1
+    reading_lock.release()
 
     indexes = list(range(len(storage_nodes)))
     
@@ -30,48 +33,11 @@ def get_storage_node():
         else:
             indexes.pop(index_indexes)
 
+    reading_lock.acquire()
     reading_list_storage_nodes -= 1
-
-def self_discover_ring():
-    
+    reading_lock.release()
 
 
-    while True:
-        new_storage_nodes = set()
-
-        for ip, port in storage_nodes:
-            node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            
-            try:    
-                node_socket.connect((ip, port))
-
-                node_socket.sendall(f"GK".encode())
-                response = node_socket.recv(1024).decode().strip()
-
-                if response.startswith("220"):
-                    new_storage_nodes.add((ip, port))
-
-                    for address in response.split(" ")[1:]:
-                        new_storage_nodes.add((address.split(":")[0], int(address.split(":")[1])))
-
-            except:
-                pass
-
-            finally:
-                node_socket.close()
-
-        if len(new_storage_nodes) > 0:
-            updating_list_storage_nodes = True
-
-            while reading_list_storage_nodes > 0:
-                pass
-
-            storage_nodes = list(new_storage_nodes)
-            print(storage_nodes)
-
-            updating_list_storage_nodes = False
-
-        time.sleep(15)
 def update_list_storage_nodes():
     global storage_nodes, updating_list_storage_nodes, reading_list_storage_nodes
 
