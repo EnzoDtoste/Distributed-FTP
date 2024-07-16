@@ -1,7 +1,6 @@
 import threading
 import socket
 import os
-import hashlib
 import json
 from datetime import datetime
 import time
@@ -37,6 +36,8 @@ class StorageNode:
         self.finished_first_update = False
         self.verbose = True
         self.update_verbose = False
+        self.broadcast_listener_thread = threading.Thread(target=broadcast_listener, args=(self,))
+        
 
 #Find the id of the succesor of a node in a single finger table
 def get_table_successor(finger_table, id):
@@ -319,7 +320,9 @@ def update(storageNode : StorageNode):
 
         if check_successors(storageNode):
             if update_finger_table(storageNode):
-                storageNode.finished_first_update = True
+                if not storageNode.finished_first_update:
+                    storageNode.finished_first_update = True
+                    storageNode.broadcast_listener_thread.start()
 
         storageNode.join_mutex.release()
 
@@ -327,62 +330,94 @@ def update(storageNode : StorageNode):
         
 
 def auto_request_join(storageNode: StorageNode, index = 0):
-    ip_cache = ['172.17.0.2', '172.17.0.2', '172.17.0.3']
-    port_cache = [5000, 5001, 5000]
-    if(index < len(ip_cache)):
+    address_cache = []#[('172.17.0.2', 5000), ('172.17.0.2', 5001)]
+    
+    if(index < len(address_cache)):
         try:
-            request_join(storageNode, ip_cache[index], port_cache[index])
-            print(f"Successfully connected to {ip_cache[index]}:{port_cache[index]}")
+            request_join(storageNode, *address_cache[index])
+            print(f"Successfully connected to {address_cache[index][0]}:{address_cache[index][1]}")
         except:
-            print(f"Failed to connect to {ip_cache[index]}:{port_cache[index]} - {index}")
+            print(f"Failed to connect to {address_cache[index][0]}:{address_cache[index][1]} - {index}")
             auto_request_join(storageNode, (index + 1))    
     else:
         print("All default IPs failed, attempting to use Broadcast...")
-        #Here we should use Broadcast
+        broadcast_request_join(storageNode)
+
+
+def broadcast_listener(storageNode: StorageNode):
+    broadcast_port = 37020
+
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(('', broadcast_port))
+        sock.settimeout(1)
+
+        while not storageNode.stop_update:
+            try:
+                data, address = sock.recvfrom(1024)
+
+                if not storageNode.stop_update:
+                    print(f"Received message from {address}: {data.decode()}")
+                    
+                    request_data = json.loads(data.decode().strip())
+                    action = request_data.get('action')
+
+                    if action == 'report':
+                        response_data = json.dumps({
+                            'action': 'reporting',
+                            'ip': storageNode.host,
+                            'port': storageNode.port
+                        })
+                        
+                        sock.sendto(response_data.encode(), address)
+                        print(f"Response sent to {address}: {response_data}")
+
+            except:
+                pass
+
 
 def broadcast_request_join(storageNode: StorageNode):
     broadcast_ip = '<broadcast>'
-    broadcast_port = 5000  # Puerto de difusión
-    message = json.dumps({'action': 'request_join', 'node_info': 'your_node_info'})  # Ajusta la información del nodo según sea necesario
+    broadcast_port = 37020
+    message = json.dumps({'action': 'report'})
     
-    # Crear un socket UDP
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         sock.settimeout(5)
         
         try:
-            # Enviar mensaje de difusión
             sock.sendto(message.encode(), (broadcast_ip, broadcast_port))
             print(f"Broadcast message sent: {message}")
             
-            # Escuchar respuestas
             while True:
                 try:
-                    response, addr = sock.recvfrom(4096)  # Tamaño del búfer en bytes
+                    response, _ = sock.recvfrom(1024)
                     response_data = json.loads(response.decode())
-                    print(f"Received response from {addr}: {response_data}")
                     
-                    if response_data.get('action') == 'join_response':
-                        ip = addr[0]
+                    if response_data.get('action') == 'reporting':
+                        ip = response_data.get('ip')
                         port = response_data.get('port')
-                        if request_join(storageNode, ip, port):
-                            print(f"Successfully joined the network via {ip}:{port}")
-                            return
+
+                        try:
+                            request_join(storageNode, ip, port)
+                            print(f"Successfully connected to {ip}:{port}")
+                            break
+                        except:
+                            pass
+                
                 except socket.timeout:
                     print("Broadcast request timed out")
                     break
         except Exception as e:
             print(f"Exception in broadcast_request_join: {e}")
 
+
 def request_join(storageNode : StorageNode, node_ip, node_port):
     """Request to join a node (storageNode) to the DHT of a node (node_ip, node_port)"""
-    try:
-        try:
-            node_ip, node_port = find_successor(getId(storageNode.host, storageNode.port), node_ip, node_port, verbose=storageNode.verbose)
-        except:
-            request_join(storageNode, node_ip, node_port)
-            return
+    
+    node_ip, node_port = find_successor(getId(storageNode.host, storageNode.port), node_ip, node_port, verbose=storageNode.verbose)
 
+    try:
         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         node_socket.connect((node_ip, node_port))
         
@@ -396,7 +431,7 @@ def request_join(storageNode : StorageNode, node_ip, node_port):
         if response.startswith("220"):
             storageNode.stop_update = True
             
-            while storageNode.update_thread.is_alive():
+            while storageNode.update_thread.is_alive() and storageNode.broadcast_listener_thread.is_alive():
                 pass
 
             storageNode.finished_first_update = False

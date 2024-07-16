@@ -1,17 +1,11 @@
-from storage_node import StorageNode, accept_connections_async, request_join, find_successor, hash_function
-from utils import hash_function
-import os
+from storage_node import StorageNode, accept_connections_async, auto_request_join
 import time
-import datetime
-import threading
-import random
 
 node5 = StorageNode(port=5004) 
 node5.verbose = False
 
 accept_connections_async(node5)
-request_join(node5, '172.17.0.2', 5000)
-
+auto_request_join(node5)
 
 while True:
     time.sleep(20)
