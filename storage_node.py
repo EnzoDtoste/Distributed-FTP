@@ -37,7 +37,9 @@ class StorageNode:
         self.verbose = True
         self.update_verbose = False
         self.broadcast_listener_thread = threading.Thread(target=broadcast_listener, args=(self,))
-        
+        self.successor_mutex = threading.Lock()
+        self.check_closest_successor_thread = threading.Thread(target=check_closest_successor, args=(self,))
+        self.predecessor_mutex = threading.Lock()
 
 #Find the id of the succesor of a node in a single finger table
 def get_table_successor(finger_table, id):
@@ -163,14 +165,31 @@ def broadcast_find_successor(storageNode : StorageNode):
         except Exception as e:
             print(f"Exception in broadcast_request_join: {e}")
 
+def check_closest_successor(storageNode : StorageNode):
+    while not storageNode.stop_update:
+        broadcast_successor = broadcast_find_successor(storageNode)
+
+        if broadcast_successor:
+            storageNode.successor_mutex.acquire()
+            
+            if storageNode.successor is None or broadcast_successor[0] < storageNode.successor[0]:
+                storageNode.successor = broadcast_successor
+
+            storageNode.successor_mutex.release()
+
+        time.sleep(10)
 
 def check_successors(storageNode : StorageNode):
     """Update sucesors list and replicates data if its necesary"""
     try:
         new_successors = []
 
+        storageNode.successor_mutex.acquire()
+        successors_list = [storageNode.successor] + storageNode.successors
+        storageNode.successor_mutex.release()
+
         # Find first successor
-        for successor in [storageNode.successor] + storageNode.successors:
+        for successor in successors_list:
             if ping_node(successor[1], successor[2], storageNode.update_verbose):
                 new_successors.append(successor)
                 break
@@ -179,7 +198,10 @@ def check_successors(storageNode : StorageNode):
             successor = broadcast_find_successor(storageNode)
 
             if successor is not None:
+                storageNode.successor_mutex.acquire()
                 storageNode.successor = successor
+                storageNode.successor_mutex.release()
+
                 return check_successors(storageNode)
 
             return False
@@ -222,7 +244,11 @@ def check_successors(storageNode : StorageNode):
                 for key, value in items:
                     id_key = hash_function(key)
 
-                    if (storageNode.predecessor[0] > storageNode.identifier and (id_key <= storageNode.identifier or id_key > storageNode.predecessor[0])) or (storageNode.predecessor[0] < id_key and id_key <= storageNode.identifier):
+                    storageNode.predecessor_mutex.acquire()
+                    key_owner = (storageNode.predecessor[0] > storageNode.identifier and (id_key <= storageNode.identifier or id_key > storageNode.predecessor[0])) or (storageNode.predecessor[0] < id_key and id_key <= storageNode.identifier)
+                    storageNode.predecessor_mutex.release()                    
+
+                    if key_owner:
                         if isinstance(value[0], dict):
                             
                             data = f"{json.dumps(value[0])}".encode()
@@ -370,6 +396,9 @@ def update_finger_table(storageNode : StorageNode):
 
 
 def update(storageNode : StorageNode):
+    if not storageNode.check_closest_successor_thread.is_alive():
+        storageNode.check_closest_successor_thread.start()
+
     while not storageNode.stop_update:
         
         storageNode.join_mutex.acquire()
@@ -487,7 +516,7 @@ def request_join(storageNode : StorageNode, node_ip, node_port):
         if response.startswith("220"):
             storageNode.stop_update = True
             
-            while storageNode.update_thread.is_alive() and storageNode.broadcast_listener_thread.is_alive():
+            while storageNode.update_thread.is_alive() and storageNode.broadcast_listener_thread.is_alive() and storageNode.check_closest_successor_thread.is_alive():
                 pass
 
             storageNode.finished_first_update = False
@@ -672,7 +701,10 @@ def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
 
 def handle_ss_command(storageNode : StorageNode, ip, port, client_socket):
     new_successor_id = hash_function(getId(ip, port))
+
+    storageNode.successor_mutex.acquire()
     storageNode.successor = new_successor_id, ip, port
+    storageNode.successor_mutex.release()
 
 
 def handle_sp_command(storageNode : StorageNode, ip, port, client_socket):
@@ -681,12 +713,18 @@ def handle_sp_command(storageNode : StorageNode, ip, port, client_socket):
     new_predecessor_id = hash_function(getId(ip, port))
     
     if (storageNode.identifier < storageNode.predecessor[0] and (storageNode.predecessor[0] < new_predecessor_id or new_predecessor_id < storageNode.identifier)) or (storageNode.predecessor[0] < new_predecessor_id and new_predecessor_id < storageNode.identifier):
+        storageNode.predecessor_mutex.acquire()
         storageNode.predecessor = new_predecessor_id, ip, port
+        storageNode.predecessor_mutex.release()
+
         client_socket.send(f"220".encode())
 
     else:
         if not ping_node(storageNode.predecessor[1], storageNode.predecessor[2], storageNode.verbose):
+            storageNode.predecessor_mutex.acquire()
             storageNode.predecessor = new_predecessor_id, ip, port
+            storageNode.predecessor_mutex.release()
+
             client_socket.send(f"220".encode())
 
         else:
