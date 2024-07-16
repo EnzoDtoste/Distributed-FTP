@@ -122,6 +122,48 @@ def handle_ping_command(client_socket):
     client_socket.send(f"220".encode())
 
 
+def broadcast_find_successor(storageNode : StorageNode):
+    broadcast_ip = '<broadcast>'
+    broadcast_port = 37020
+    message = json.dumps({'action': 'report'})
+    
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        sock.settimeout(5)
+        
+        try:
+            sock.sendto(message.encode(), (broadcast_ip, broadcast_port))
+            print(f"Broadcast message sent: {message}")
+            
+            closest_successor = None
+
+            while True:
+                try:
+                    response, _ = sock.recvfrom(1024)
+                    response_data = json.loads(response.decode())
+                    
+                    if response_data.get('action') == 'reporting':
+                        ip = response_data.get('ip')
+                        port = response_data.get('port')
+                        id = hash_function(getId(ip, port))
+
+                        if closest_successor is None:
+                            closest_successor = id, ip, port
+                        
+                        elif closest_successor[0] < storageNode.identifier and (id > storageNode.identifier or id < closest_successor[0]):
+                            closest_successor = id, ip, port
+
+                        elif closest_successor[0] > storageNode.identifier and id < closest_successor[0] and id > storageNode.identifier:
+                            closest_successor = id, ip, port
+        
+                
+                except socket.timeout:
+                    return closest_successor
+
+        except Exception as e:
+            print(f"Exception in broadcast_request_join: {e}")
+
+
 def check_successors(storageNode : StorageNode):
     """Update sucesors list and replicates data if its necesary"""
     try:
@@ -134,6 +176,12 @@ def check_successors(storageNode : StorageNode):
                 break
 
         if len(new_successors) == 0:
+            successor = broadcast_find_successor(storageNode)
+
+            if successor is not None:
+                storageNode.successor = successor
+                return check_successors(storageNode)
+
             return False
 
         while len(new_successors) < storageNode.k_successors:
@@ -231,7 +279,15 @@ def check_successors(storageNode : StorageNode):
             print(f"Notify Successor {new_successors[0][1]}:{new_successors[0][2]}")
         
         node_socket.sendall(f"SP {storageNode.host}:{storageNode.port}".encode())
+        
+        response = node_socket.recv(1024).decode().strip()
         node_socket.close()
+
+        if response.startswith("550"):
+            ip, port = response[4:].split(":")
+            port = int(port)
+            storageNode.successor = hash_function(getId(ip, port)), ip, port
+            return check_successors(storageNode)
 
         storageNode.successor = new_successors[0]
         storageNode.successors = new_successors  
@@ -612,10 +668,12 @@ def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
             print(f"Error: {e}")
 
     storageNode.join_mutex.release()
-        
+
+
 def handle_ss_command(storageNode : StorageNode, ip, port, client_socket):
     new_successor_id = hash_function(getId(ip, port))
     storageNode.successor = new_successor_id, ip, port
+
 
 def handle_sp_command(storageNode : StorageNode, ip, port, client_socket):
     storageNode.join_mutex.acquire()
@@ -624,14 +682,17 @@ def handle_sp_command(storageNode : StorageNode, ip, port, client_socket):
     
     if (storageNode.identifier < storageNode.predecessor[0] and (storageNode.predecessor[0] < new_predecessor_id or new_predecessor_id < storageNode.identifier)) or (storageNode.predecessor[0] < new_predecessor_id and new_predecessor_id < storageNode.identifier):
         storageNode.predecessor = new_predecessor_id, ip, port
+        client_socket.send(f"220".encode())
 
     else:
         if not ping_node(storageNode.predecessor[1], storageNode.predecessor[2], storageNode.verbose):
             storageNode.predecessor = new_predecessor_id, ip, port
+            client_socket.send(f"220".encode())
+
+        else:
+            client_socket.send(f"550 {storageNode.predecessor[1]}:{storageNode.predecessor[2]}".encode())
 
     storageNode.join_mutex.release()
-
-
 
 
 def handle_rp_command(storageNode : StorageNode, client_socket):
