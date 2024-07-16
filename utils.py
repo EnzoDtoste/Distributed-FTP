@@ -19,7 +19,8 @@ def getId(host, port):
 
 def ping_node(node_ip, node_port, verbose=True):
     node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    
+    node_socket.settimeout(2)
+
     try:
         node_socket.connect((node_ip, node_port))
 

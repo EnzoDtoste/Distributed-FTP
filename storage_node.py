@@ -21,6 +21,7 @@ class StorageNode:
         self.port = port
         self.identifier = hash_function(getId(self.host, self.port))
         self.data = {}
+        self.deleted_data = {}
         self.finger_table_bigger = []
         self.finger_table_smaller = []
         self.predecessor = None
@@ -40,6 +41,7 @@ class StorageNode:
         self.successor_mutex = threading.Lock()
         self.check_closest_successor_thread = threading.Thread(target=check_closest_successor, args=(self,))
         self.predecessor_mutex = threading.Lock()
+        self.check_not_owned_data_thread = threading.Thread(target=check_not_owned_data, args=(self,))
 
 #Find the id of the succesor of a node in a single finger table
 def get_table_successor(finger_table, id):
@@ -108,7 +110,11 @@ def get_k_successors(storageNode : StorageNode):
 
 #Handle et sucessor command, 
 def handle_gs_command(storageNode : StorageNode, id_key, client_socket):
-    if (storageNode.predecessor[0] > storageNode.identifier and (id_key <= storageNode.identifier or id_key > storageNode.predecessor[0])) or (storageNode.predecessor[0] < id_key and id_key <= storageNode.identifier):
+    storageNode.predecessor_mutex.acquire()
+    key_owner = (storageNode.predecessor[0] > storageNode.identifier and (id_key <= storageNode.identifier or id_key > storageNode.predecessor[0])) or (storageNode.predecessor[0] < id_key and id_key <= storageNode.identifier)
+    storageNode.predecessor_mutex.release()
+
+    if key_owner:
         client_socket.send(f"220".encode())
     else:
         ip, port = find_table_successor(storageNode, id_key)
@@ -178,6 +184,113 @@ def check_closest_successor(storageNode : StorageNode):
             storageNode.successor_mutex.release()
 
         time.sleep(10)
+
+
+
+def check_not_owned_data(storageNode : StorageNode):
+    while not storageNode.stop_update:
+        try:
+            items = []
+
+            while True:
+                try:
+                    items = list(storageNode.data.items())
+                    break
+                except Exception as e:
+                    if storageNode.verbose:
+                        print(f"Error: {e}")
+
+            for key, value in items:
+                id_key = hash_function(key)
+
+                storageNode.predecessor_mutex.acquire()
+                key_owner = (storageNode.predecessor[0] > storageNode.identifier and (id_key <= storageNode.identifier or id_key > storageNode.predecessor[0])) or (storageNode.predecessor[0] < id_key and id_key <= storageNode.identifier)
+                storageNode.predecessor_mutex.release()                    
+
+                if not key_owner:
+                    try:
+                        while storageNode.updating:
+                            pass
+                        
+                        storageNode.reading_mutex.acquire()
+                        storageNode.reading_count += 1
+                        storageNode.reading_mutex.release()
+
+                        node_ip, node_port = storageNode.successors[0][1], storageNode.successors[0][2]
+
+                        storageNode.reading_mutex.acquire()
+                        storageNode.reading_count -= 1
+                        storageNode.reading_mutex.release()
+
+                        ip, port = find_successor(id_key, node_ip, node_port, True, storageNode.update_verbose)
+                    except:
+                        continue
+
+                    try:
+                        node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        node_socket.connect((ip, port))
+                    except:
+                        continue
+
+                    try:
+                        node_socket.sendall(f"RP".encode())
+
+                        response = node_socket.recv(1024).decode().strip()
+
+                        if response.startswith("220"):
+                            if isinstance(value[0], dict):
+                                
+                                data = f"{json.dumps(value[0])}".encode()
+                                node_socket.sendall(f"Folder {value[1].strftime('%Y%m%d%H%M%S%f')} {len(data)} {key}".encode())
+
+                                response = node_socket.recv(1024).decode().strip()
+
+                                if response.startswith("220"):
+                                    node_socket.sendall(data)
+
+                                    response = node_socket.recv(1024).decode().strip()
+
+                                    if (not response) or not response.startswith("220"):
+                                        raise Exception(f"Something went wrong reallocating {ip}:{port} {key}")
+
+                                    if storageNode.update_verbose:
+                                        print(f"Transfer complete {key}")
+
+                            else:
+                                node_socket.sendall(f"File {value[1].strftime('%Y%m%d%H%M%S%f')} {os.stat(value[0]).st_size} {key}".encode())
+
+                                response = node_socket.recv(1024).decode().strip()
+
+                                if response.startswith("220"):
+                                    with open(value[0], "rb") as file:
+                                        data = file.read(4096)
+                                        count = 0
+                                        while data:
+                                            node_socket.sendall(data)
+                                            count += len(data)
+                                            data = file.read(4096)
+
+                                    response = node_socket.recv(1024).decode().strip()
+
+                                    if (not response) or not response.startswith("220"):
+                                        raise Exception(f"Something went wrong reallocating {ip}:{port} {key}")
+
+                                    if storageNode.update_verbose:
+                                        print(f"Transfer complete {key}")
+
+                            node_socket.send(b"226 Transfer complete.\r\n")
+                            storageNode.deleted_data[key] = value[1]
+                            storageNode.data.pop(key)
+                    
+                    finally:
+                        node_socket.close()
+
+        except Exception as e:
+            if storageNode.update_verbose:
+                print(f"Error: {e}")
+
+        time.sleep(10)
+
 
 def check_successors(storageNode : StorageNode):
     """Update sucesors list and replicates data if its necesary"""
@@ -286,7 +399,7 @@ def check_successors(storageNode : StorageNode):
                                 if (not response) or not response.startswith("220"):
                                     raise Exception(f"Something went wrong replicating {new_successor[1]}:{new_successor[2]} {key}")
 
-                                if storageNode.verbose:
+                                if storageNode.update_verbose:
                                     print(f"Transfer complete {key}")
 
                 node_socket.send(b"226 Transfer complete.\r\n")
@@ -408,6 +521,7 @@ def update(storageNode : StorageNode):
                 if not storageNode.finished_first_update:
                     storageNode.finished_first_update = True
                     storageNode.broadcast_listener_thread.start()
+                    storageNode.check_not_owned_data_thread.start()
 
         storageNode.join_mutex.release()
 
@@ -516,7 +630,7 @@ def request_join(storageNode : StorageNode, node_ip, node_port):
         if response.startswith("220"):
             storageNode.stop_update = True
             
-            while storageNode.update_thread.is_alive() and storageNode.broadcast_listener_thread.is_alive() and storageNode.check_closest_successor_thread.is_alive():
+            while storageNode.update_thread.is_alive() or storageNode.broadcast_listener_thread.is_alive() or storageNode.check_closest_successor_thread.is_alive() or storageNode.check_not_owned_data_thread.is_alive():
                 pass
 
             storageNode.finished_first_update = False
@@ -526,7 +640,9 @@ def request_join(storageNode : StorageNode, node_ip, node_port):
             predecessor_ip, predecessor_port = response[4:].split(":")
             predecessor_port = int(predecessor_port)
 
+            storageNode.predecessor_mutex.acquire()
             storageNode.predecessor = hash_function(getId(predecessor_ip, predecessor_port)), predecessor_ip, predecessor_port
+            storageNode.predecessor_mutex.release()
 
             node_socket.send(f"220".encode())
 
@@ -624,9 +740,13 @@ def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
     join_node_id = hash_function(getId(ip, port))
 
     try:
-        if (storageNode.predecessor[0] > storageNode.identifier and (join_node_id <= storageNode.identifier or join_node_id > storageNode.predecessor[0])) or (storageNode.predecessor[0] < join_node_id and join_node_id <= storageNode.identifier):
+        storageNode.predecessor_mutex.acquire()
+        predecessor = storageNode.predecessor
+        storageNode.predecessor_mutex.release()
 
-            client_socket.send(f"220 {storageNode.predecessor[1]}:{storageNode.predecessor[2]}".encode())
+        if (predecessor[0] > storageNode.identifier and (join_node_id <= storageNode.identifier or join_node_id > predecessor[0])) or (predecessor[0] < join_node_id and join_node_id <= storageNode.identifier):
+
+            client_socket.send(f"220 {predecessor[1]}:{predecessor[2]}".encode())
 
             response = client_socket.recv(1024).decode().strip()
 
@@ -644,7 +764,7 @@ def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
                 for key, value in items:
                     id_key = hash_function(key)
 
-                    if (storageNode.predecessor[0] > join_node_id and (id_key <= join_node_id or id_key > storageNode.predecessor[0])) or (storageNode.predecessor[0] < id_key and id_key <= join_node_id):
+                    if (predecessor[0] > join_node_id and (id_key <= join_node_id or id_key > predecessor[0])) or (predecessor[0] < id_key and id_key <= join_node_id):
                         if isinstance(value[0], dict):
                             
                             data = f"{json.dumps(value[0])}".encode()
@@ -687,10 +807,12 @@ def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
 
                 client_socket.send(b"226 Transfer complete.\r\n")
 
+                storageNode.predecessor_mutex.acquire()
                 storageNode.predecessor = join_node_id, ip, port
+                storageNode.predecessor_mutex.release()
 
         else:
-            client_socket.send(f"550 {storageNode.predecessor[1]}:{storageNode.predecessor[2]}".encode())
+            client_socket.send(f"550 {predecessor[1]}:{predecessor[2]}".encode())
 
     except Exception as e:
         if storageNode.verbose:
@@ -709,28 +831,26 @@ def handle_ss_command(storageNode : StorageNode, ip, port, client_socket):
 
 def handle_sp_command(storageNode : StorageNode, ip, port, client_socket):
     storageNode.join_mutex.acquire()
+    storageNode.predecessor_mutex.acquire()
 
-    new_predecessor_id = hash_function(getId(ip, port))
-    
-    if (storageNode.identifier < storageNode.predecessor[0] and (storageNode.predecessor[0] < new_predecessor_id or new_predecessor_id < storageNode.identifier)) or (storageNode.predecessor[0] < new_predecessor_id and new_predecessor_id < storageNode.identifier):
-        storageNode.predecessor_mutex.acquire()
-        storageNode.predecessor = new_predecessor_id, ip, port
-        storageNode.predecessor_mutex.release()
-
-        client_socket.send(f"220".encode())
-
-    else:
-        if not ping_node(storageNode.predecessor[1], storageNode.predecessor[2], storageNode.verbose):
-            storageNode.predecessor_mutex.acquire()
+    try:
+        new_predecessor_id = hash_function(getId(ip, port))
+        
+        if (storageNode.identifier < storageNode.predecessor[0] and (storageNode.predecessor[0] < new_predecessor_id or new_predecessor_id < storageNode.identifier)) or (storageNode.predecessor[0] < new_predecessor_id and new_predecessor_id < storageNode.identifier):
             storageNode.predecessor = new_predecessor_id, ip, port
-            storageNode.predecessor_mutex.release()
-
             client_socket.send(f"220".encode())
 
         else:
-            client_socket.send(f"550 {storageNode.predecessor[1]}:{storageNode.predecessor[2]}".encode())
+            if not ping_node(storageNode.predecessor[1], storageNode.predecessor[2], storageNode.verbose):
+                storageNode.predecessor = new_predecessor_id, ip, port
+                client_socket.send(f"220".encode())
 
-    storageNode.join_mutex.release()
+            else:
+                client_socket.send(f"550 {storageNode.predecessor[1]}:{storageNode.predecessor[2]}".encode())
+
+    finally:
+        storageNode.predecessor_mutex.release()
+        storageNode.join_mutex.release()
 
 
 def handle_rp_command(storageNode : StorageNode, client_socket):
@@ -747,7 +867,7 @@ def handle_rp_command(storageNode : StorageNode, client_socket):
                 size = int(args[1])
                 path = " ".join(args[2:])
 
-                if path not in storageNode.data or storageNode.data[path][1] < version:
+                if (path not in storageNode.deleted_data or storageNode.deleted_data[path] != version) and (path not in storageNode.data or storageNode.data[path][1] < version):
                     client_socket.send(f"220".encode())
                         
                     data_json = ""
@@ -774,7 +894,7 @@ def handle_rp_command(storageNode : StorageNode, client_socket):
                 size = int(args[1])
                 key = " ".join(args[2:])
 
-                if key not in storageNode.data or storageNode.data[key][1] < version:
+                if (key not in storageNode.deleted_data or storageNode.deleted_data[key] != version) and (key not in storageNode.data or storageNode.data[key][1] < version):
                     os.makedirs(os.path.dirname(key), exist_ok=True)
 
                     with open(key, "wb") as file: # binary mode
@@ -850,7 +970,8 @@ def handle_mkd_command(storageNode : StorageNode, key, client_socket):
 
 def handle_rmd_command(storageNode : StorageNode, key, client_socket):
     if key in storageNode.data:
-        dirs = storageNode.data.pop(key)[0]
+        dirs, version = storageNode.data.pop(key)
+        storageNode.deleted_data[key] = version
 
         try:
             items = []
@@ -981,11 +1102,10 @@ def handle_stor_command(storageNode : StorageNode, key, client_socket):
 
 def handle_dele_command(storageNode : StorageNode, key, client_socket):
     if key in storageNode.data:
-        path = storageNode.data[key][0]
-
         try:
-            storageNode.data.pop(key)
-            #os.remove(path)
+            _, version = storageNode.data.pop(key)
+            storageNode.deleted_data[key] = version
+            
             client_socket.send(f"220".encode())
 
         except Exception as e:
