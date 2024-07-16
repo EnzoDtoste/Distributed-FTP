@@ -256,6 +256,9 @@ def check_not_owned_data(storageNode : StorageNode):
                                     if storageNode.update_verbose:
                                         print(f"Transfer complete {key}")
 
+                                if response.startswith("404"):
+                                    storageNode.data.pop(key)
+
                             else:
                                 node_socket.sendall(f"File {value[1].strftime('%Y%m%d%H%M%S%f')} {os.stat(value[0]).st_size} {key}".encode())
 
@@ -278,10 +281,11 @@ def check_not_owned_data(storageNode : StorageNode):
                                     if storageNode.update_verbose:
                                         print(f"Transfer complete {key}")
 
+                                if response.startswith("404"):
+                                    storageNode.data.pop(key)
+
                             node_socket.send(b"226 Transfer complete.\r\n")
-                            storageNode.deleted_data[key] = value[1]
-                            storageNode.data.pop(key)
-                    
+
                     finally:
                         node_socket.close()
 
@@ -884,6 +888,9 @@ def handle_rp_command(storageNode : StorageNode, client_socket):
                     if storageNode.verbose:
                         print(f"Transfer complete {path}")
 
+                elif path in storageNode.deleted_data and storageNode.deleted_data[path] == version:
+                    client_socket.send(f"404".encode())
+
                 else:
                     client_socket.send(f"403".encode())
 
@@ -911,6 +918,9 @@ def handle_rp_command(storageNode : StorageNode, client_socket):
 
                         if storageNode.verbose:
                             print(f"Transfer complete {key}")
+
+                elif key in storageNode.deleted_data and storageNode.deleted_data[key] == version:
+                    client_socket.send(f"404".encode())
 
                 else:
                     client_socket.send(f"403".encode())
