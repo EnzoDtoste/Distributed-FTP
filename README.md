@@ -20,7 +20,7 @@ The project develops a distributed FTP system designed to enhance file transfer 
 
 ## Architecture
 - **Nodes**: The system incorporates two types of nodes: data storage nodes and order routing nodes.
-- **Chord Ring**: All nodes are organized in a Chord ring, facilitating efficient data location and retrieval.
+- **Chord Ring**: All data storage nodes are organized in a Chord ring, facilitating efficient data location and retrieval.
 
 ## Features
 - **Data Replication**: Implements data replication across storage nodes to ensure high availability and fault tolerance.
@@ -71,4 +71,4 @@ Replace `x` in `x:21` with the port you want to expose to the FTP client.
 
 ### Client Setup
 - **FTP Client**: Use any software that implements the RFC 959 FTP protocol, such as FileZilla.
-- **Server Configuration**: For local setups, use `127.0.0.1`. Username and password can be any text. The port should be one of those used by the routing nodes. Check the "Listening" status printed on the routing node consoles for the correct port.
+- **Server Configuration**: For local setups, use `127.0.0.1`. Username and password can be any text. The port should be one of those used by the routing nodes. If routing nodes are local check the "Listening" status printed on the routing node consoles for the correct port.
