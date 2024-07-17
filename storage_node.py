@@ -7,6 +7,7 @@ import time
 from utils import hash_function, getId, find_successor, get_host_ip, ping_node
 
 def setup_control_socket(port=0):
+    """Returns the socket of this node"""
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.bind(('0.0.0.0', port))
     server_socket.listen(5)
@@ -453,6 +454,7 @@ def check_successors(storageNode : StorageNode):
 
 
 def update_finger_table(storageNode : StorageNode):
+    """Updates the Finger Table of a requested node"""
     try:
         new_finger_table_bigger = []
         new_finger_table_smaller = []
@@ -518,6 +520,7 @@ def update_finger_table(storageNode : StorageNode):
 
 
 def update(storageNode : StorageNode):
+    """Thread to update the status of the node, checking the sucessors and updating the finger table"""
     if not storageNode.check_closest_successor_thread.is_alive():
         storageNode.check_closest_successor_thread.start()
 
@@ -538,7 +541,8 @@ def update(storageNode : StorageNode):
         
 
 def auto_request_join(storageNode: StorageNode, index = 0):
-    address_cache = []#[('172.17.0.2', 5000), ('172.17.0.2', 5001)]
+    """Tries to join to the default IPs, if it fails to connect to all of them, tries to use broadcast"""
+    address_cache = [('172.17.0.2', 5000), ('172.17.0.2', 5001)]
     
     if(index < len(address_cache)):
         try:
@@ -559,6 +563,8 @@ def auto_request_join(storageNode: StorageNode, index = 0):
 
 
 def broadcast_listener(storageNode: StorageNode):
+    """Waits for a node that uses broadcast to find the ring, 
+    report this node if avarible and sends its ip and port"""
     broadcast_port = 37020
 
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as sock:
@@ -594,6 +600,7 @@ def broadcast_listener(storageNode: StorageNode):
 
 
 def broadcast_request_join(storageNode: StorageNode):
+    """Uses broadcast to find an active node in the the local network"""
     broadcast_ip = '<broadcast>'
     broadcast_port = 37020
     message = json.dumps({'action': 'report'})
@@ -757,7 +764,7 @@ def request_join(storageNode : StorageNode, node_ip, node_port):
             print(f"Error: {e}")
 
 def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
-    """"""
+    """Adds a node as a succesor of this node"""
     while not storageNode.finished_first_update:
         pass
     
@@ -966,6 +973,7 @@ def handle_rp_command(storageNode : StorageNode, client_socket):
             print(f"Error: {e}")
 
 def handle_list_command(storageNode : StorageNode, key, client_socket):
+    """Response for LIST command, lists the content of a file in the according direction"""
     if key in storageNode.data:
         dirs = storageNode.data[key][0]
 
@@ -997,6 +1005,7 @@ def handle_list_command(storageNode : StorageNode, key, client_socket):
     
 
 def handle_mkd_command(storageNode : StorageNode, key, client_socket):
+    """Created a folder in the requested direction"""
     if key not in storageNode.data:
         time = datetime.now()
         storageNode.data[key] = {}, time
@@ -1064,6 +1073,7 @@ def handle_stor_dir_command(storageNode : StorageNode, folder, dirname, info, cl
     
 
 def handle_dele_dir_command(storageNode : StorageNode, folder, dirname, client_socket):
+    """Deletes a folder in the requested direction"""
     if folder in storageNode.data:
         time = datetime.now()
         dirs = storageNode.data[folder][0]
@@ -1084,6 +1094,7 @@ def handle_dele_dir_command(storageNode : StorageNode, folder, dirname, client_s
     
 
 def handle_retr_command(storageNode : StorageNode, key, idx, client_socket):
+    """Retrieves info from a direction"""
     if key in storageNode.data:
         path = storageNode.data[key][0]
 
@@ -1118,6 +1129,7 @@ def handle_retr_command(storageNode : StorageNode, key, idx, client_socket):
     
 
 def handle_stor_command(storageNode : StorageNode, key, client_socket):
+    """Stores some info in a direction"""
     try:
         path = os.path.normpath("/app/" + str(storageNode.identifier) + os.path.dirname(key)[4:])
         os.makedirs(path, exist_ok=True)
@@ -1147,6 +1159,7 @@ def handle_stor_command(storageNode : StorageNode, key, client_socket):
 
 
 def handle_dele_command(storageNode : StorageNode, key, client_socket):
+    """Response for DELE command, deletes the requested file"""
     if key in storageNode.data:
         try:
             _, version = storageNode.data.pop(key)
@@ -1166,6 +1179,7 @@ def handle_rnfr_command(storageNode : StorageNode, key, client_socket):
 
 
 def handle_client(storageNode, client_socket):
+    """Recives the command requested by the client and performs the according action"""
     try:
         command = client_socket.recv(1024).decode().strip()
         
