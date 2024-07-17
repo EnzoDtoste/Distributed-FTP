@@ -12,6 +12,7 @@ reading_list_storage_nodes = 0
 reading_lock = threading.Lock()
 
 def get_storage_node():
+    """Gets a node from the Ring"""
     global storage_nodes, updating_list_storage_nodes, reading_list_storage_nodes
 
     while updating_list_storage_nodes:
@@ -80,7 +81,7 @@ def update_list_storage_nodes():
 
 
 def setup_control_socket(host='0.0.0.0', port=21):
-    """ """
+    """The clients must connect to this socket"""
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.bind((host, port))
     server_socket.listen(5)
@@ -88,7 +89,7 @@ def setup_control_socket(host='0.0.0.0', port=21):
     return server_socket
 
 def handle_pasv_command(client_socket, port_range=(50000, 50100)):
-    """"Response for PASV command, """
+    """"Response for PASV command, creates a socket within a range and connect it with the client"""
     for port in random.sample(range(*port_range), port_range[1] - port_range[0]):
         try:
             data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
