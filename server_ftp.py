@@ -5,8 +5,9 @@ from datetime import datetime
 from utils import find_successor, ping_node
 import random
 import time
+import json
 
-storage_nodes = [('172.17.0.3', 5002)]
+storage_nodes = [('10.2.0.2', 50), ('172.17.0.2', 59887)]
 updating_list_storage_nodes = False
 reading_list_storage_nodes = 0
 reading_lock = threading.Lock()
@@ -38,6 +39,40 @@ def get_storage_node():
     reading_list_storage_nodes -= 1
     reading_lock.release()
 
+def broadcast_storage_node():
+    broadcast_ip = '<broadcast>'
+    broadcast_port = 37020
+    message = json.dumps({'action': 'report'})
+    
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        sock.settimeout(5)
+        
+        try:
+            sock.sendto(message.encode(), (broadcast_ip, broadcast_port))
+
+            print(f"Broadcast message sent: {message}")
+            
+            while True:
+                try:
+                    response, _ = sock.recvfrom(1024)
+                    response_data = json.loads(response.decode())
+                    
+                    if response_data.get('action') == 'reporting':
+                        ip = response_data.get('ip')
+                        port = response_data.get('port')
+
+                        try:
+                            print(f"Detected {ip}:{port}")
+                            return ip, port
+                        except:
+                            pass
+                
+                except socket.timeout:
+                    print("Broadcast request timed out")
+                    break
+        except Exception as e:
+            print(f"Exception in broadcast_request_join: {e}")
 
 def update_list_storage_nodes():
     """Refreesh the StorageNodes list"""
@@ -66,6 +101,12 @@ def update_list_storage_nodes():
             finally:
                 node_socket.close()
 
+        if len(new_storage_nodes) == 0:
+            storage_node = broadcast_storage_node()
+
+            if storage_node:
+                new_storage_nodes.add(storage_node)
+
         if len(new_storage_nodes) > 0:
             updating_list_storage_nodes = True
 
@@ -83,8 +124,13 @@ def update_list_storage_nodes():
 def setup_control_socket(host='0.0.0.0', port=21):
     """The clients must connect to this socket"""
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind((host, port))
+    try:
+        server_socket.bind((host, port))
+    except:
+        server_socket.bind((host, 0))
+
     server_socket.listen(5)
+    port = server_socket.getsockname()[1]
     print(f"Listening on {host}:{port}")
     return server_socket
 
@@ -604,10 +650,6 @@ def handle_dele_command(filename, client_socket, current_dir, node_ip=None, node
         if client_socket:
             client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
-
-        
-
-        
 
 
 def handle_client(client_socket):
