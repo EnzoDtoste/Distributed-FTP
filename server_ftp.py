@@ -121,10 +121,14 @@ def update_list_storage_nodes():
 
 
 def setup_control_socket(host='0.0.0.0', port=21):
-    """ """
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind((host, port))
+    try:
+        server_socket.bind((host, port))
+    except:
+        server_socket.bind((host, 0))
+
     server_socket.listen(5)
+    port = server_socket.getsockname()[1]
     print(f"Listening on {host}:{port}")
     return server_socket
 
@@ -644,10 +648,6 @@ def handle_dele_command(filename, client_socket, current_dir, node_ip=None, node
         if client_socket:
             client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
-
-        
-
-        
 
 
 def handle_client(client_socket):

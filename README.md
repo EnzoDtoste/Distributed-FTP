@@ -30,3 +30,45 @@ The project develops a distributed FTP system designed to enhance file transfer 
 - **Python**: The primary programming language used for developing the system.
 - **Distributed Architecture**: Utilizes a ring-based network topology typical of Chord systems for optimal data distribution and redundancy.
 
+## Execution Instructions
+
+### Initial Setup with Zero Nodes
+- **Local Execution**: If there are no nodes in the ring, run:
+
+`python init_ftp_storage.py`
+
+- **Docker Execution**: Build the Docker image if necessary, and run the container:
+
+`docker build -f dockerfile_init_ftp_storage -t dist_init .`\
+`docker run --rm -it dist_init`
+
+This will create the root path `/app`. Note: Just because this node was the first created does not mean it is essential; it can be removed if more nodes are present, and the system will still function.
+
+### Adding Storage Nodes
+- **Local Execution**: If at least one node exists, execute:
+
+`python storage_node.py`
+
+- **Docker Execution**: Build the Docker image if necessary, and run the container. You can repeat this process to create as many storage nodes as needed:
+
+`docker build -f dockerfile_storage -t dist_storage .`\
+`docker run --rm -it dist_storage`
+
+
+### Starting Routing Nodes
+- **Local Execution**: For routing nodes, which establish FTP client connections, execute:
+
+`python server_ftp.py`
+
+
+- **Docker Execution**: Build the Docker image if necessary, and run the container:
+
+`docker build -f dockerfile_routing -t dist_routing .`\
+`docker run --rm -p x:21 -p 50000-50100:50000-50100 -it dist_routing`
+
+
+Replace `x` in `x:21` with the port you want to expose to the FTP client.
+
+### Client Setup
+- **FTP Client**: Use any software that implements the RFC 959 FTP protocol, such as FileZilla.
+- **Server Configuration**: For local setups, use `127.0.0.1`. Username and password can be any text. The port should be one of those used by the routing nodes. Check the "Listening" status printed on the routing node consoles for the correct port.

@@ -446,7 +446,7 @@ def check_successors(storageNode : StorageNode):
     except Exception as e:
         storageNode.updating = False
         
-        if storageNode.update_verbose or True:
+        if storageNode.update_verbose:
             print(f"Checking Successors Error: {e}")
 
         return False
