@@ -54,13 +54,9 @@ def main():
             successor = get_closest_up(successor_id)
             successor.data[key] = (value, time)
 
-    
-    try:
-        root_path = os.path.normpath("/[Cine Clasico] Red Planet (2000) DUAL")
-        entries = os.listdir(root_path)
-    except:
-        root_path = os.path.normpath("/app")
-        entries = os.listdir(root_path)
+
+    root_path = os.path.normpath("/app")
+    entries = os.listdir(root_path)
 
     inner_dirs = {}
     for entry in entries:
@@ -133,31 +129,25 @@ def main():
     ##########   Accept Connections  ###########
 
     for node in nodes:
-        if node.port != -1:
-            accept_connections_async(node)
-        else:
-            node.socket.close()
+        accept_connections_async(node)
     
     for node in nodes:
         node.update_thread.start()
-    #     print('----------------')
-    #     print(node.finger_table_bigger)
-    #     print(node.finger_table_smaller)
-    #     print(node.successors)
-    #     print(node.successor)
-    #     print('-----------------')
-
-    # for node in nodes[-10:]:
-    #     print('--------------')
-    #     print(node.host + ":" + str(node.port))
-    #     print(node.identifier)
-    #     print('---------------')
-
-    # new_node = StorageNode(port = 205)
+    
 
     while True:
         input()
-        #request_join(new_node)
+
+        for node in nodes:
+            node.update_thread.start()
+            print('----------------')
+            print(f"Node {node.port}")
+            print(node.predecessor)
+            print(node.successors)
+            print(node.finger_table_bigger)
+            print(node.finger_table_smaller)
+            print('-----------------')
+
 
 if __name__ == "__main__":
     main()

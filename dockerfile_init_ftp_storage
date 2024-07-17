@@ -2,6 +2,7 @@ FROM python:3.11-slim
 
 COPY storage_node.py /storage_node.py
 COPY utils.py /utils.py
+COPY init_ftp_storage.py /init_ftp_storage.py
 
 WORKDIR /app
 
@@ -9,4 +10,4 @@ VOLUME /data
 
 EXPOSE 50
 
-CMD ["python", "../storage_node.py"]
+CMD ["python", "../init_ftp_storage.py"]

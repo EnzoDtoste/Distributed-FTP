@@ -1,8 +1,32 @@
-# Distributed-FTP
+<table style="border-collapse: collapse; width: 100%;">
+  <tr>
+    <th style="border: 1px solid black; background-color: gray; color: black;">Nombre</th>
+    <th style="border: 1px solid black; background-color: gray; color: black;">Grupo</th>
+  </tr>
+  <tr>
+    <td style="border: 1px solid black; background-color: gray; color: black;">Enzo Rojas D´toste</td>
+    <td style="border: 1px solid black; background-color: gray; color: black;">C411</td>
+  </tr>
+  <tr>
+    <td style="border: 1px solid black; background-color: gray; color: black;">Daniel Abad Fundora</td>
+    <td style="border: 1px solid black; background-color: gray; color: black;">C411</td>
+  </tr>
+</table>
 
-Enzo Rojas D'Toste    C-411
-Daniel Abad Fundora   C-411
+# Distributed FTP System Using Chord Protocol
 
-#Requieriments
+## Overview
+The project develops a distributed FTP system designed to enhance file transfer reliability and scalability by leveraging the Chord distributed hash table (DHT) protocol.
 
-You need to have docker and FileZilla instaled in your computer. Running the dockerfiles will automaticaly download and install python 3.9-slim in the container. You can run the tests in tests folder or create your own tests. Afer you set up the tests run the server's dockerfile and run FileZilla. Connect it to the IP 127.0.0.1 and port 21. Use the userneme and password that you preffer
+## Architecture
+- **Nodes**: The system incorporates two types of nodes: data storage nodes and order routing nodes.
+- **Chord Ring**: All nodes are organized in a Chord ring, facilitating efficient data location and retrieval.
+
+## Features
+- **Data Replication**: Implements data replication across storage nodes to ensure high availability and fault tolerance.
+- **Dynamic Scalability**: Supports dynamic addition and removal of nodes with minimal disruption to the system.
+
+## Technologies
+- **Python**: The primary programming language used for developing the system.
+- **Distributed Architecture**: Utilizes a ring-based network topology typical of Chord systems for optimal data distribution and redundancy.
+
