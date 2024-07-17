@@ -932,9 +932,12 @@ def handle_rp_command(storageNode : StorageNode, client_socket):
                 key = " ".join(args[2:])
 
                 if (key not in storageNode.deleted_data or storageNode.deleted_data[key] != version) and (key not in storageNode.data or storageNode.data[key][1] < version):
-                    os.makedirs(os.path.dirname(key), exist_ok=True)
+                    path = os.path.normpath("/app/" + str(storageNode.identifier) + os.path.dirname(key)[4:])
+                    os.makedirs(path, exist_ok=True)
 
-                    with open(key, "wb") as file: # binary mode
+                    path = os.path.normpath(path + "/" + key[len(os.path.dirname(key)):])
+
+                    with open(path, "wb") as file: # binary mode
                         client_socket.send(f"220".encode())
 
                         count = 0
@@ -943,7 +946,7 @@ def handle_rp_command(storageNode : StorageNode, client_socket):
                             file.write(data)
                             count += len(data)
                         
-                        storageNode.data[key] = key, version
+                        storageNode.data[key] = path, version
                         client_socket.send(f"220".encode())
 
                         if storageNode.verbose:
@@ -1116,9 +1119,12 @@ def handle_retr_command(storageNode : StorageNode, key, idx, client_socket):
 
 def handle_stor_command(storageNode : StorageNode, key, client_socket):
     try:
-        os.makedirs(os.path.dirname(key), exist_ok=True)
+        path = os.path.normpath("/app/" + str(storageNode.identifier) + os.path.dirname(key)[4:])
+        os.makedirs(path, exist_ok=True)
 
-        with open(key, "wb") as file: # binary mode
+        path = os.path.normpath(path + "/" + key[len(os.path.dirname(key)):])
+
+        with open(path, "wb") as file: # binary mode
             client_socket.send(f"220".encode())
 
             response = client_socket.recv(1024).decode().strip()
@@ -1133,7 +1139,7 @@ def handle_stor_command(storageNode : StorageNode, key, client_socket):
                     file.write(data)
                 
                 time = datetime.now()
-                storageNode.data[key] = key, time
+                storageNode.data[key] = path, time
 
     except Exception as e:
         if storageNode.verbose:
