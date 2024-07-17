@@ -6,7 +6,7 @@ from utils import find_successor, ping_node
 import random
 import time
 
-storage_nodes = [('172.17.0.3', 5002)]
+storage_nodes = [('172.17.0.2', 5000)]
 updating_list_storage_nodes = False
 reading_list_storage_nodes = 0
 reading_lock = threading.Lock()

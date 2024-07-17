@@ -141,7 +141,9 @@ def broadcast_find_successor(storageNode : StorageNode):
         
         try:
             sock.sendto(message.encode(), (broadcast_ip, broadcast_port))
-            print(f"Broadcast message sent: {message}")
+
+            if storageNode.update_verbose:
+                print(f"Broadcast message sent: {message}")
             
             closest_successor = None
 
@@ -153,23 +155,26 @@ def broadcast_find_successor(storageNode : StorageNode):
                     if response_data.get('action') == 'reporting':
                         ip = response_data.get('ip')
                         port = response_data.get('port')
-                        id = hash_function(getId(ip, port))
 
-                        if closest_successor is None:
-                            closest_successor = id, ip, port
-                        
-                        elif closest_successor[0] < storageNode.identifier and (id > storageNode.identifier or id < closest_successor[0]):
-                            closest_successor = id, ip, port
+                        if ip != storageNode.host or port != storageNode.port:
+                            id = hash_function(getId(ip, port))
 
-                        elif closest_successor[0] > storageNode.identifier and id < closest_successor[0] and id > storageNode.identifier:
-                            closest_successor = id, ip, port
+                            if closest_successor is None:
+                                closest_successor = id, ip, port
+                            
+                            elif closest_successor[0] < storageNode.identifier and (id > storageNode.identifier or id < closest_successor[0]):
+                                closest_successor = id, ip, port
+
+                            elif closest_successor[0] > storageNode.identifier and id < closest_successor[0] and id > storageNode.identifier:
+                                closest_successor = id, ip, port
         
                 
                 except socket.timeout:
                     return closest_successor
 
         except Exception as e:
-            print(f"Exception in broadcast_request_join: {e}")
+            if storageNode.update_verbose:
+                print(f"Exception in broadcast_request_join: {e}")
 
 def check_closest_successor(storageNode : StorageNode):
     while not storageNode.stop_update:
@@ -304,7 +309,7 @@ def check_successors(storageNode : StorageNode):
         storageNode.successor_mutex.acquire()
         successors_list = [storageNode.successor] + storageNode.successors
         storageNode.successor_mutex.release()
-
+        
         # Find first successor
         for successor in successors_list:
             if ping_node(successor[1], successor[2], storageNode.update_verbose):
@@ -422,7 +427,7 @@ def check_successors(storageNode : StorageNode):
             print(f"Notify Successor {new_successors[0][1]}:{new_successors[0][2]}")
         
         node_socket.sendall(f"SP {storageNode.host}:{storageNode.port}".encode())
-        
+
         response = node_socket.recv(1024).decode().strip()
         node_socket.close()
 
@@ -430,6 +435,7 @@ def check_successors(storageNode : StorageNode):
             ip, port = response[4:].split(":")
             port = int(port)
             storageNode.successor = hash_function(getId(ip, port)), ip, port
+            storageNode.updating = False
             return check_successors(storageNode)
 
         storageNode.successor = new_successors[0]
@@ -442,7 +448,7 @@ def check_successors(storageNode : StorageNode):
     except Exception as e:
         storageNode.updating = False
         
-        if storageNode.update_verbose:
+        if storageNode.update_verbose or True:
             print(f"Checking Successors Error: {e}")
 
         return False
@@ -538,12 +544,18 @@ def auto_request_join(storageNode: StorageNode, index = 0):
     if(index < len(address_cache)):
         try:
             request_join(storageNode, *address_cache[index])
-            print(f"Successfully connected to {address_cache[index][0]}:{address_cache[index][1]}")
+
+            if storageNode.verbose:
+                print(f"Successfully connected to {address_cache[index][0]}:{address_cache[index][1]}")
         except:
-            print(f"Failed to connect to {address_cache[index][0]}:{address_cache[index][1]} - {index}")
+            if storageNode.verbose:
+                print(f"Failed to connect to {address_cache[index][0]}:{address_cache[index][1]} - {index}")
+            
             auto_request_join(storageNode, (index + 1))    
     else:
-        print("All default IPs failed, attempting to use Broadcast...")
+        if storageNode.verbose:
+            print("All default IPs failed, attempting to use Broadcast...")
+        
         broadcast_request_join(storageNode)
 
 
@@ -560,7 +572,8 @@ def broadcast_listener(storageNode: StorageNode):
                 data, address = sock.recvfrom(1024)
 
                 if not storageNode.stop_update:
-                    print(f"Received message from {address}: {data.decode()}")
+                    if storageNode.update_verbose:
+                        print(f"Received message from {address}: {data.decode()}")
                     
                     request_data = json.loads(data.decode().strip())
                     action = request_data.get('action')
@@ -573,7 +586,9 @@ def broadcast_listener(storageNode: StorageNode):
                         })
                         
                         sock.sendto(response_data.encode(), address)
-                        print(f"Response sent to {address}: {response_data}")
+
+                        if storageNode.update_verbose:
+                            print(f"Response sent to {address}: {response_data}")
 
             except:
                 pass
@@ -590,7 +605,9 @@ def broadcast_request_join(storageNode: StorageNode):
         
         try:
             sock.sendto(message.encode(), (broadcast_ip, broadcast_port))
-            print(f"Broadcast message sent: {message}")
+
+            if storageNode.verbose:
+                print(f"Broadcast message sent: {message}")
             
             while True:
                 try:
@@ -603,16 +620,21 @@ def broadcast_request_join(storageNode: StorageNode):
 
                         try:
                             request_join(storageNode, ip, port)
-                            print(f"Successfully connected to {ip}:{port}")
+
+                            if storageNode.verbose:
+                                print(f"Successfully connected to {ip}:{port}")
+                            
                             break
                         except:
                             pass
                 
                 except socket.timeout:
-                    print("Broadcast request timed out")
+                    if storageNode.verbose:
+                        print("Broadcast request timed out")
                     break
         except Exception as e:
-            print(f"Exception in broadcast_request_join: {e}")
+            if storageNode.verbose:
+                print(f"Exception in broadcast_request_join: {e}")
 
 
 def request_join(storageNode : StorageNode, node_ip, node_port):
@@ -834,13 +856,15 @@ def handle_ss_command(storageNode : StorageNode, ip, port, client_socket):
 
 
 def handle_sp_command(storageNode : StorageNode, ip, port, client_socket):
-    storageNode.join_mutex.acquire()
     storageNode.predecessor_mutex.acquire()
 
     try:
         new_predecessor_id = hash_function(getId(ip, port))
         
-        if (storageNode.identifier < storageNode.predecessor[0] and (storageNode.predecessor[0] < new_predecessor_id or new_predecessor_id < storageNode.identifier)) or (storageNode.predecessor[0] < new_predecessor_id and new_predecessor_id < storageNode.identifier):
+        if new_predecessor_id == storageNode.predecessor[0]:
+            client_socket.send(f"220".encode())
+
+        elif (storageNode.identifier < storageNode.predecessor[0] and (storageNode.predecessor[0] < new_predecessor_id or new_predecessor_id < storageNode.identifier)) or (storageNode.predecessor[0] < new_predecessor_id and new_predecessor_id < storageNode.identifier):
             storageNode.predecessor = new_predecessor_id, ip, port
             client_socket.send(f"220".encode())
 
@@ -854,7 +878,6 @@ def handle_sp_command(storageNode : StorageNode, ip, port, client_socket):
 
     finally:
         storageNode.predecessor_mutex.release()
-        storageNode.join_mutex.release()
 
 
 def handle_rp_command(storageNode : StorageNode, client_socket):
