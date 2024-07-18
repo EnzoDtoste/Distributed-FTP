@@ -1305,9 +1305,6 @@ def handle_client(storageNode, client_socket):
             key = command[4:].strip()
             handle_rmd_command(storageNode, key, client_socket)
 
-        elif command.startswith('RNFR'):
-            key = command[5:].strip()
-            handle_rnfr_command(storageNode, key, client_socket)
         
         elif command.startwith('READ'):
             key = command[5:].strip()
