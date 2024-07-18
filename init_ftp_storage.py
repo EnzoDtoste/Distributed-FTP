@@ -6,7 +6,7 @@ node = StorageNode()
 node.verbose = False
 
 app_path = os.path.normpath('/app')
-node.data[app_path] = {}, datetime.datetime.now()
+node.data[app_path] = {}, 0
 
 accept_connections_async(node)
 node.update_thread.start()

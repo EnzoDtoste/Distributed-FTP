@@ -42,6 +42,7 @@ class StorageNode:
         self.check_closest_successor_thread = threading.Thread(target=check_closest_successor, args=(self,))
         self.predecessor_mutex = threading.Lock()
         self.check_not_owned_data_thread = threading.Thread(target=check_not_owned_data, args=(self,))
+        self.version_mutex = threading.Lock()
 
 #Find the id of the succesor of a node in a single finger table
 def get_table_successor(finger_table, id):
@@ -234,7 +235,7 @@ def check_not_owned_data(storageNode : StorageNode):
                             if isinstance(value[0], dict):
                                 
                                 data = f"{json.dumps(value[0])}".encode()
-                                node_socket.sendall(f"Folder {value[1].strftime('%Y%m%d%H%M%S%f')} {len(data)} {key}".encode())
+                                node_socket.sendall(f"Folder {value[1]} {len(data)} {key}".encode())
 
                                 response = node_socket.recv(1024).decode().strip()
 
@@ -253,7 +254,7 @@ def check_not_owned_data(storageNode : StorageNode):
                                     storageNode.data.pop(key)
 
                             else:
-                                node_socket.sendall(f"File {value[1].strftime('%Y%m%d%H%M%S%f')} {os.stat(value[0]).st_size} {key}".encode())
+                                node_socket.sendall(f"File {value[1]} {os.stat(value[0]).st_size} {key}".encode())
 
                                 response = node_socket.recv(1024).decode().strip()
 
@@ -373,7 +374,7 @@ def check_successors(storageNode : StorageNode):
                         if isinstance(value[0], dict):
                             
                             data = f"{json.dumps(value[0])}".encode()
-                            node_socket.sendall(f"Folder {value[1].strftime('%Y%m%d%H%M%S%f')} {len(data)} {key}".encode())
+                            node_socket.sendall(f"Folder {value[1]} {len(data)} {key}".encode())
 
                             response = node_socket.recv(1024).decode().strip()
 
@@ -389,7 +390,7 @@ def check_successors(storageNode : StorageNode):
                                     print(f"Transfer complete {key}")
 
                         else:
-                            node_socket.sendall(f"File {value[1].strftime('%Y%m%d%H%M%S%f')} {os.stat(value[0]).st_size} {key}".encode())
+                            node_socket.sendall(f"File {value[1]} {os.stat(value[0]).st_size} {key}".encode())
 
                             response = node_socket.recv(1024).decode().strip()
 
@@ -685,7 +686,7 @@ def request_join(storageNode : StorageNode, node_ip, node_port):
                 if response.startswith("Folder"):
                     args = response[7:].strip().split(" ")
                     
-                    version = datetime.strptime(args[0], '%Y%m%d%H%M%S%f')
+                    version = int(args[0])
                     size = int(args[1])
                     path = " ".join(args[2:])
 
@@ -712,7 +713,7 @@ def request_join(storageNode : StorageNode, node_ip, node_port):
                 elif response.startswith("File"):
                     args = response[5:].strip().split(" ")
                     
-                    version = datetime.strptime(args[0], '%Y%m%d%H%M%S%f')
+                    version = int(args[0])
                     size = int(args[1])
                     key = " ".join(args[2:])
 
@@ -804,7 +805,7 @@ def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
                         if isinstance(value[0], dict):
                             
                             data = f"{json.dumps(value[0])}".encode()
-                            client_socket.sendall(f"Folder {value[1].strftime('%Y%m%d%H%M%S%f')} {len(data)} {key}".encode())
+                            client_socket.sendall(f"Folder {value[1]} {len(data)} {key}".encode())
 
                             response = client_socket.recv(1024).decode().strip()
 
@@ -820,7 +821,7 @@ def handle_join_command(storageNode : StorageNode, ip, port, client_socket):
                                     print(f"Transfer complete {key}")
 
                         else:
-                            client_socket.sendall(f"File {value[1].strftime('%Y%m%d%H%M%S%f')} {os.stat(value[0]).st_size} {key}".encode())
+                            client_socket.sendall(f"File {value[1]} {os.stat(value[0]).st_size} {key}".encode())
 
                             response = client_socket.recv(1024).decode().strip()
 
@@ -904,7 +905,7 @@ def handle_rp_command(storageNode : StorageNode, client_socket):
             if response.startswith("Folder"):
                 args = response[7:].strip().split(" ")
                 
-                version = datetime.strptime(args[0], '%Y%m%d%H%M%S%f')
+                version = int(args[0])
                 size = int(args[1])
                 path = " ".join(args[2:])
 
@@ -934,7 +935,7 @@ def handle_rp_command(storageNode : StorageNode, client_socket):
             elif response.startswith("File"):
                 args = response[5:].strip().split(" ")
                 
-                version = datetime.strptime(args[0], '%Y%m%d%H%M%S%f')
+                version = int(args[0])
                 size = int(args[1])
                 key = " ".join(args[2:])
 
@@ -1021,8 +1022,7 @@ def handle_list_command(storageNode : StorageNode, key, client_socket):
 def handle_mkd_command(storageNode : StorageNode, key, client_socket):
     """Created a folder in the requested direction"""
     if key not in storageNode.data:
-        time = datetime.now()
-        storageNode.data[key] = {}, time
+        storageNode.data[key] = {}, 0
 
         try:
             client_socket.send(f"220".encode())
@@ -1071,10 +1071,12 @@ def handle_rmd_command(storageNode : StorageNode, key, client_socket):
 
 def handle_stor_dir_command(storageNode : StorageNode, folder, dirname, info, client_socket):
     if folder in storageNode.data:
-        time = datetime.now()
-        dirs = storageNode.data[folder][0]
+        dirs, version = storageNode.data[folder]
         dirs[dirname] = info
-        storageNode.data[folder] = dirs, time
+
+        storageNode.version_mutex.acquire()
+        storageNode.data[folder] = dirs, version + 1
+        storageNode.version_mutex.release()
 
         try:
             client_socket.send(f"220".encode())
@@ -1089,10 +1091,11 @@ def handle_stor_dir_command(storageNode : StorageNode, folder, dirname, info, cl
 def handle_dele_dir_command(storageNode : StorageNode, folder, dirname, client_socket):
     """Deletes a folder in the requested direction"""
     if folder in storageNode.data:
-        time = datetime.now()
-        dirs = storageNode.data[folder][0]
+        dirs, version = storageNode.data[folder]
         dirs.pop(dirname)
-        storageNode.data[folder] = dirs, time
+        storageNode.version_mutex.acquire()
+        storageNode.data[folder] = dirs, version + 1
+        storageNode.version_mutex.release()
 
         if storageNode.verbose:
             print(f"Pop {dirname}")
@@ -1164,8 +1167,9 @@ def handle_stor_command(storageNode : StorageNode, key, client_socket):
 
                     file.write(data)
                 
-                time = datetime.now()
-                storageNode.data[key] = path, time
+                storageNode.version_mutex.acquire()
+                storageNode.data[key] = path, (storageNode.data[key][1] + 1 if key in storageNode.data else 0)
+                storageNode.version_mutex.release()
 
     except Exception as e:
         if storageNode.verbose:
@@ -1187,9 +1191,6 @@ def handle_dele_command(storageNode : StorageNode, key, client_socket):
     else:
         client_socket.send(f"404 Not Found".encode())
     
-def handle_rnfr_command(storageNode : StorageNode, key, client_socket):
-    if key in storageNode.data:
-        path = storageNode.data[key]
 
 
 def handle_client(storageNode, client_socket):
@@ -1271,9 +1272,6 @@ def handle_client(storageNode, client_socket):
             key = command[4:].strip()
             handle_rmd_command(storageNode, key, client_socket)
 
-        elif command.startswith('RNFR'):
-            key = command[5:].strip()
-            handle_rnfr_command(storageNode, key, client_socket)
 
     except ConnectionResetError:
         if storageNode.verbose:
