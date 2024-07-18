@@ -542,7 +542,7 @@ def update(storageNode : StorageNode):
 
 def auto_request_join(storageNode: StorageNode, index = 0):
     """Tries to join to the default IPs, if it fails to connect to all of them, tries to use broadcast"""
-    address_cache = [('172.17.0.2', 5000), ('172.17.0.2', 5001)]
+    address_cache = []
     
     if(index < len(address_cache)):
         try:
@@ -972,6 +972,20 @@ def handle_rp_command(storageNode : StorageNode, client_socket):
         if storageNode.verbose:
             print(f"Error: {e}")
 
+def handle_ed_command(storageNode : StorageNode, key, client_socket):
+    """Response for ED command, checks that the directory exists, and answers the type of directory"""
+    if key in storageNode.data:
+        element = storageNode.data[key][0]
+
+        if isinstance(element, dict):
+            client_socket.send(f"220 Folder".encode())
+        else:
+            client_socket.send(f"220 File".encode())
+
+    else:
+        client_socket.send(f"404 Not Found".encode())
+
+
 def handle_list_command(storageNode : StorageNode, key, client_socket):
     """Response for LIST command, lists the content of a file in the according direction"""
     if key in storageNode.data:
@@ -1210,6 +1224,10 @@ def handle_client(storageNode, client_socket):
         elif command.startswith('JOIN'):
             ip, port = command[5:].strip().split(":")
             handle_join_command(storageNode, ip, int(port), client_socket)
+
+        elif command.startswith('ED'):
+            key = command[3:].strip()
+            handle_ed_command(storageNode, key, client_socket)
 
         elif command.startswith('LIST'):
             key = command[5:].strip()

@@ -2,7 +2,7 @@ import socket
 import threading
 import os
 from datetime import datetime
-from utils import find_successor, ping_node
+from utils import find_successor, ping_node, get_host_ip
 import random
 import time
 import json
@@ -118,7 +118,7 @@ def update_list_storage_nodes():
 
             updating_list_storage_nodes = False
 
-        time.sleep(15)
+        time.sleep(5)
 
 
 def setup_control_socket(host='0.0.0.0', port=21):
@@ -483,7 +483,8 @@ def handle_retr_command(filename, client_socket, data_socket, current_dir, node_
 
             aux_nodes = [(address.split(":")[0], int(address.split(":")[1])) for address in args[1:]] if len(args) > 1 else []
 
-            client_socket.send(b"150 Opening binary mode data connection.\r\n")
+            if client_socket:
+                client_socket.send(b"150 Opening binary mode data connection.\r\n")
 
             count = 0
             node_socket.send(b"220 Ok")
@@ -494,7 +495,8 @@ def handle_retr_command(filename, client_socket, data_socket, current_dir, node_
                 except:
                     if len(aux_nodes) == 0:
                         node_socket.close()
-                        client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
+                        if client_socket:
+                            client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
                         return
 
                     while len(aux_nodes) > 0:
@@ -533,7 +535,8 @@ def handle_retr_command(filename, client_socket, data_socket, current_dir, node_
                 #print(f"{count} / {size}")
 
             node_socket.close()
-            client_socket.send(b"226 Transfer complete.\r\n")
+            if client_socket:
+                client_socket.send(b"226 Transfer complete.\r\n")
             print("Transfer complete")
 
         elif response.startswith("550"):
@@ -547,7 +550,10 @@ def handle_retr_command(filename, client_socket, data_socket, current_dir, node_
 
     except Exception as e:
         print(f"Error: {e}")
-        client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
+        if client_socket:
+            client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
+        else:
+            raise e
 
 
 def handle_stor_command(filename, client_socket, data_socket, current_dir, node_ip=None, node_port=None):
@@ -574,7 +580,8 @@ def handle_stor_command(filename, client_socket, data_socket, current_dir, node_
         response = node_socket.recv(1024).decode().strip()
 
         if response.startswith("220"):
-            client_socket.send(b"150 Opening binary mode data connection for file transfer.\r\n")
+            if client_socket:
+                client_socket.send(b"150 Opening binary mode data connection for file transfer.\r\n")
             
             node_socket.send(b"220 Ok")
 
@@ -591,9 +598,11 @@ def handle_stor_command(filename, client_socket, data_socket, current_dir, node_
             node_socket.close()
 
             if send_stor_dir_command(filename, f"-rw-r--r-- 1 0 0 {count} {datetime.now().strftime('%b %d %H:%M')} {os.path.basename(filename)}", current_dir):
-                client_socket.send(b"226 Transfer complete.\r\n")
+                if client_socket:
+                    client_socket.send(b"226 Transfer complete.\r\n")
             else:
-                client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
+                if client_socket:
+                    client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
         elif response.startswith("550"):
             ip, port = response.split(" ")[1].split(":")
@@ -603,7 +612,10 @@ def handle_stor_command(filename, client_socket, data_socket, current_dir, node_
 
     except Exception as e:
         print(f"Error: {e}")
-        client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
+        if client_socket:
+            client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
+        else:
+            raise e
 
 def handle_dele_command(filename, client_socket, current_dir, node_ip=None, node_port=None):
     """Response for DELE command, search for the node where the selected file must be, and if it finds it, removes the file from that node"""
@@ -650,6 +662,101 @@ def handle_dele_command(filename, client_socket, current_dir, node_ip=None, node
         if client_socket:
             client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
+
+def copy_file(file_path, new_file_path):
+    try:
+        bind_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        bind_socket.bind(('0.0.0.0', 0))
+        bind_socket.listen(1)
+
+        output_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        pack_input = [None]
+
+        def accept_conn():
+            pack_input[0] = bind_socket.accept()[0]
+
+        threading.Thread(target=accept_conn, args=()).start()
+
+        output_socket.connect((get_host_ip(), bind_socket.getsockname()[1]))
+
+        time.sleep(1)
+        bind_socket.close()
+        input_socket = pack_input[0]
+
+        retr_finished = [False]
+        stor_finished = [False]
+
+        def retr():
+            handle_retr_command(os.path.basename(file_path), None, input_socket, os.path.dirname(file_path))
+            input_socket.close()
+            retr_finished[0] = True
+
+        def stor():
+            handle_stor_command(os.path.basename(new_file_path), None, output_socket, os.path.dirname(new_file_path))
+            output_socket.close()
+            stor_finished[0] = True
+
+        threading.Thread(target=retr, args=()).start()
+        threading.Thread(target=stor, args=()).start()
+    
+        while (not retr_finished[0]) or (not stor_finished[0]):
+            pass
+
+        return True
+    except:
+        return False
+
+def handle_rnfr_command(directory_name, client_socket, current_dir, node_ip=None, node_port=None):
+    dir_path = os.path.join(current_dir, directory_name)
+
+    try:
+        while node_ip is None or node_port is None:
+            node_ip, node_port = get_storage_node()
+
+        try:
+            node_ip, node_port = find_successor(dir_path, node_ip, node_port)
+        except:
+            handle_rnfr_command(directory_name, client_socket, current_dir)
+            return
+        
+        node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        node_socket.connect((node_ip, node_port))
+        
+        print(f"Connected to {node_ip}:{node_port}")
+        
+        node_socket.sendall(f"ED {dir_path}".encode())
+
+        response = node_socket.recv(1024).decode().strip()
+        
+        node_socket.close()
+
+        if response.startswith("220"):
+            type = response[4:]
+            
+            client_socket.send(b"350 Requested file action pending further information.\r\n")
+
+            response = client_socket.recv(1024).decode().strip()
+
+            if response.startswith("RNTO"):
+                new_dir_name = response[5:]
+                new_dir_path = os.path.join(current_dir, new_dir_name)
+                
+                if type == "File":
+                    if copy_file(dir_path, new_dir_path):
+                        handle_dele_command(os.path.basename(dir_path), None, os.path.normpath(os.path.dirname(dir_path)))
+                        client_socket.send(b"250 Requested file action okay, completed.\r\n")
+                    else:
+                        client_socket.send(b"550 Requested action aborted: local error in processing.\r\n")
+
+                    
+        else:
+            client_socket.send(b"550 Requested action not taken.\r\n")
+
+        
+
+    except Exception as e:
+        print(f"Error: {e}")
+        client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
 
 def handle_client(client_socket):
@@ -746,6 +853,9 @@ def handle_client(client_socket):
                 dirname = command[4:].strip()
                 handle_rmd_command(dirname, client_socket, current_dir)
             
+            elif command.startswith('RNFR'):
+                dirname = command[5:].strip()
+                handle_rnfr_command(dirname, client_socket, current_dir)
 
             else:
                 client_socket.send(b'500 Syntax error, command unrecognized.\r\n')
