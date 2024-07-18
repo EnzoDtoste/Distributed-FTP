@@ -376,9 +376,11 @@ def handle_mkd_command(dirname, client_socket, current_dir, node_ip=None, node_p
             node_socket.close()
 
             if send_stor_dir_command(dirname, f"drwxr-xr-x 1 0 0 0 {datetime.now().strftime('%b %d %H:%M')} {os.path.basename(dirname)}", current_dir):
-                client_socket.send(f'257 "{new_dir_path}" created.\r\n'.encode())
+                if client_socket:
+                    client_socket.send(f'257 "{new_dir_path}" created.\r\n'.encode())
             else:
-                client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
+                if client_socket:
+                    client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
         elif response.startswith("550"):
             ip, port = response.split(" ")[1].split(":")
@@ -387,11 +389,13 @@ def handle_mkd_command(dirname, client_socket, current_dir, node_ip=None, node_p
             return
         
         else:
-            client_socket.send(b"550 Directory already exists.\r\n")
+            if client_socket:
+                client_socket.send(b"550 Directory already exists.\r\n")
 
     except Exception as e:
         print(f"Error: {e}")
-        client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
+        if client_socket:
+            client_socket.send(b"451 Requested action aborted: local error in processing.\r\n")
 
 
 def handle_rmd_command(dirname, client_socket, current_dir, node_ip=None, node_port=None):
@@ -667,14 +671,15 @@ def copy_folder(folder_path, new_folder_path):
     handle_mkd_command(os.path.basename(new_folder_path), None, os.path.dirname(new_folder_path))
 
     try:
+        node_ip, node_port = None, None
+
         while node_ip is None or node_port is None:
             node_ip, node_port = get_storage_node()
 
         try:
             node_ip, node_port = find_successor(folder_path, node_ip, node_port)
         except:
-            copy_folder(folder_path, new_folder_path)
-            return
+            return copy_folder(folder_path, new_folder_path)    
         
         node_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         node_socket.connect((node_ip, node_port))
@@ -684,6 +689,9 @@ def copy_folder(folder_path, new_folder_path):
         node_socket.sendall(f"READ {folder_path}".encode())
 
         response = node_socket.recv(1024).decode().strip()
+        print(response)
+
+        node_socket.close()
 
         if response.startswith("220"):
             lines = response[4:].split("\n")
@@ -697,13 +705,13 @@ def copy_folder(folder_path, new_folder_path):
 
                 if not copy_folder(folder, os.path.join(new_folder_path, os.path.basename(folder))):
                     return False
-                # handle_rmd_command(os.path.basename(folder), None, os.path.dirname(folder))
                 
             for file in files:
-                print(f"Copy {file} to {os.path.join(new_folder_path, os.path.basename(folder))}")
+                print(f"Copy {file} to {os.path.join(new_folder_path, os.path.basename(file))}")
+                
                 if not copy_file(file, os.path.join(new_folder_path , os.path.basename(file))):
                     return False    
-                # handle_dele_command(os.path.basename(file), None, os.path.normpath(os.path.dirname(file)))
+                
             return True
 
     except Exception as e:
@@ -795,9 +803,13 @@ def handle_rnfr_command(directory_name, client_socket, current_dir, node_ip=None
                     if copy_file(dir_path, new_dir_path):
                         handle_dele_command(os.path.basename(dir_path), None, os.path.normpath(os.path.dirname(dir_path)))
                         client_socket.send(b"250 Requested file action okay, completed.\r\n")
-                    elif type == "Folder":
-                        if copy_folder(dir_path, new_dir_path):
-                            handle_rmd_command(os.path.basename(dir_path), None, os.path.normpath(os.path.dirname(dir_path)) )
+                    else:
+                        client_socket.send(b"550 Requested action aborted: local error in processing.\r\n")
+                
+                elif type == "Folder":
+                    if copy_folder(dir_path, new_dir_path):
+                        handle_rmd_command(os.path.basename(dir_path), None, os.path.normpath(os.path.dirname(dir_path)))
+                        client_socket.send(b"250 Requested file action okay, completed.\r\n")
                     else:
                         client_socket.send(b"550 Requested action aborted: local error in processing.\r\n")
 

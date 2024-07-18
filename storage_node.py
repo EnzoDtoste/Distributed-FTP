@@ -1054,59 +1054,21 @@ def handle_read_command(storageNode : StorageNode, key, client_socket):
             files = []
 
             for directory, info in items:
-                        if info.startswith('drwxr-xr-x'):
-                            folders.append(directory)
-                        else:
-                            files.append(directory)
+                if info.startswith('drwxr-xr-x'):
+                    folders.append(directory)
+                else:
+                    files.append(directory)
 
             directories = '\n'.join([str(len(folders))] + folders + files)
             client_socket.send(f"220 {directories}".encode())
+        
         except Exception as e:
             if storageNode.verbose:
                 print(f"Error: {e}")
     else:
         client_socket.send(f"404 Not Found".encode())
         
-        
-            
-
-
-def handle_read_command(storageNode : StorageNode, key, client_socket): 
-    if key in storageNode.data:
-        dirs, _ = storageNode.data[key]
-
-        try:
-            items = []
-
-            while True:
-                try:
-                    items = list(dirs.items())
-                    break
-                except Exception as e:
-                    if storageNode.verbose:
-                        print(f"Error: {e}")
-
-
-            folders = []
-            files = []
-
-            for directory, info in items:
-                        if info.startswith('drwxr-xr-x'):
-                            folders.append(directory)
-                        else:
-                            files.append(directory)
-
-            directories = '\n'.join([str(len(folders))] + folders + files)
-            client_socket.send(f"220 {directories}".encode())
-        except Exception as e:
-            if storageNode.verbose:
-                print(f"Error: {e}")
-    else:
-        client_socket.send(f"404 Not Found".encode())
-        
-        
-            
-
+  
 
 def handle_rmd_command(storageNode : StorageNode, key, client_socket):
     if key in storageNode.data:
@@ -1347,7 +1309,7 @@ def handle_client(storageNode, client_socket):
             handle_rmd_command(storageNode, key, client_socket)
 
         
-        elif command.startwith('READ'):
+        elif command.startswith('READ'):
             key = command[5:].strip()
             handle_read_command(storageNode, key, client_socket)
 
