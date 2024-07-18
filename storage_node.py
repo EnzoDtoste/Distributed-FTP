@@ -1034,6 +1034,43 @@ def handle_mkd_command(storageNode : StorageNode, key, client_socket):
         client_socket.send(f"403 Already exists".encode())
     
 
+def handle_read_command(storageNode : StorageNode, key, client_socket): 
+    if key in storageNode.data:
+        dirs, _ = storageNode.data[key]
+
+        try:
+            items = []
+
+            while True:
+                try:
+                    items = list(dirs.items())
+                    break
+                except Exception as e:
+                    if storageNode.verbose:
+                        print(f"Error: {e}")
+
+
+            folders = []
+            files = []
+
+            for directory, info in items:
+                        if info.startswith('drwxr-xr-x'):
+                            folders.append(directory)
+                        else:
+                            files.append(directory)
+
+            directories = '\n'.join([str(len(folders))] + folders + files)
+            client_socket.send(f"220 {directories}".encode())
+        except Exception as e:
+            if storageNode.verbose:
+                print(f"Error: {e}")
+    else:
+        client_socket.send(f"404 Not Found".encode())
+        
+        
+            
+
+
 def handle_rmd_command(storageNode : StorageNode, key, client_socket):
     if key in storageNode.data:
         dirs, version = storageNode.data.pop(key)
@@ -1187,9 +1224,6 @@ def handle_dele_command(storageNode : StorageNode, key, client_socket):
     else:
         client_socket.send(f"404 Not Found".encode())
     
-def handle_rnfr_command(storageNode : StorageNode, key, client_socket):
-    if key in storageNode.data:
-        path = storageNode.data[key]
 
 
 def handle_client(storageNode, client_socket):
@@ -1274,6 +1308,10 @@ def handle_client(storageNode, client_socket):
         elif command.startswith('RNFR'):
             key = command[5:].strip()
             handle_rnfr_command(storageNode, key, client_socket)
+        
+        elif command.startwith('READ'):
+            key = command[5:].strip()
+            handle_read_command(storageNode, key, client_socket)
 
     except ConnectionResetError:
         if storageNode.verbose:
