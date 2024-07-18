@@ -694,12 +694,15 @@ def copy_folder(folder_path, new_folder_path):
 
             for folder in folders:
                 print(f"Copy {folder}")
-                copy_folder(folder, new_folder_path + "/" + os.path.basename(folder))
+
+                if not copy_folder(folder, os.path.join(new_folder_path, os.path.basename(folder))):
+                    return False
                 handle_rmd_command(os.path.basename(folder), None, os.path.dirname(folder))
                 
             for file in files:
                 print(f"Copy {file}")
-                copy_file(file, new_folder_path + "/" + os.path.basename(file))
+                if not copy_file(file, os.path.join(new_folder_path , os.path.basename(file))):
+                    return False    
                 handle_dele_command(os.path.basename(file), None, os.path.normpath(os.path.dirname(file)))
             return True
 
@@ -708,8 +711,6 @@ def copy_folder(folder_path, new_folder_path):
         return False
 
         
-
-
 
 
 def copy_file(file_path, new_file_path):
